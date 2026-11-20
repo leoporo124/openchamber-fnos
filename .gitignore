@@ -1,0 +1,12 @@
+node_modules
+frontend/dist
+test
+.agents
+*.fpk
+fnpack/*.fpk
+fnpack/app/bin/openchamber
+fnpack/app/*.zip
+AGENTS.md
+.openchamber/
+.env
+.env.*

@@ -1,0 +1,19 @@
+* text=auto
+*.go text eol=lf
+*.sh text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.vue text eol=lf
+*.ts text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+build.cmd text eol=crlf
+fnpack/cmd/* text eol=lf
+fnpack/config/* text eol=lf
+fnpack/wizard/* text eol=lf
+fnpack/manifest text eol=lf
+fnpack/app/ui/config text eol=lf
+fnpack/fnpack-* -text
+*.png -text
+*.PNG -text
+*.fpk -text

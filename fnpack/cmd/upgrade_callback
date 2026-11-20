@@ -1,0 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+: "${TRIM_APPDEST:?缺少应用安装目录}"
+source "$(dirname "${BASH_SOURCE[0]}")/runtime-env.sh"
+chmod 755 "${TRIM_APPDEST}/bin/openchamber"
+exit 0

@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+: "${TRIM_APPDEST:?缺少应用安装目录}"
+source "$(dirname "${BASH_SOURCE[0]}")/runtime-env.sh"
+chmod 755 "${TRIM_APPDEST}/bin/openchamber"
+mkdir -p "${DATA_LIBRARY_PATH}"/{home,config,data,state,cache,openchamber-data,snapshots}
+chown -hR -- "$OPENCHAMBER_RUN_USER" "$DATA_LIBRARY_PATH"
+if [ "${wizard_data_library_type:-data}" = "data" ]; then
+    chmod 700 "$DATA_LIBRARY_PATH"
+fi
+rm -f -- "${TRIM_APPDEST}/web.sock"
+printf '%s [INFO] OpenChamber 数据目录初始化完成（路径=%s，运行用户=%s）。\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$DATA_LIBRARY_PATH" "$OPENCHAMBER_RUN_USER" >> "${TRIM_PKGVAR}/info.log"

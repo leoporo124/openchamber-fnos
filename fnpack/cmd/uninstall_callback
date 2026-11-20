@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+
+if [ "${wizard_data_action:-keep}" = "delete" ]; then
+    : "${TRIM_APPDEST:?缺少应用安装目录}"
+    source "$(dirname "${BASH_SOURCE[0]}")/runtime-env.sh"
+    rm -rf -- "$DATA_LIBRARY_PATH"
+fi

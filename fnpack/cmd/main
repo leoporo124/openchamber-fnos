@@ -1,0 +1,73 @@
+#!/bin/bash
+set -uo pipefail
+umask 077
+
+: "${TRIM_PKGVAR:?缺少应用私有目录}"
+: "${TRIM_APPDEST:?缺少应用安装目录}"
+source "$(dirname "${BASH_SOURCE[0]}")/runtime-env.sh"
+LOG_FILE="${TRIM_PKGVAR}/info.log"
+PID_FILE="${TRIM_PKGVAR}/app.pid"
+CMD="${TRIM_APPDEST}/bin/openchamber"
+
+log_msg() {
+    printf '%s [INFO] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "${LOG_FILE}"
+}
+
+check_process() {
+    local pid="$1"
+    [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -gt 1 ] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    [ "$(readlink -f "/proc/${pid}/exe" 2>/dev/null)" = "$(readlink -f "$CMD")" ]
+}
+
+status() {
+    [ -r "$PID_FILE" ] || return 1
+    local pid
+    pid=$(tr -d '[:space:]' < "$PID_FILE")
+    check_process "$pid"
+}
+
+start_process() {
+    status && return 0
+    [ -x "$CMD" ] || return 1
+    : > "$LOG_FILE" || return 1
+    log_msg "正在启动 OpenChamber Admin。"
+    "$CMD" >> "$LOG_FILE" 2>&1 &
+    local pid=$!
+    printf '%s' "$pid" > "$PID_FILE"
+    sleep 1
+    if ! check_process "$pid"; then
+        log_msg "OpenChamber Admin 启动失败，请查看日志。"
+        rm -f -- "$PID_FILE"
+        return 1
+    fi
+}
+
+stop_process() {
+    local pid count=0
+    if [ -r "$PID_FILE" ]; then
+        pid=$(tr -d '[:space:]' < "$PID_FILE")
+        if check_process "$pid"; then
+            log_msg "正在停止 OpenChamber Admin 与托管服务。"
+            kill -TERM "$pid" || return 1
+            while check_process "$pid" && [ "$count" -lt 60 ]; do
+                sleep 1
+                count=$((count + 1))
+            done
+            if check_process "$pid"; then
+                log_msg "OpenChamber Admin 未在 60 秒内停止，强制终止。"
+                kill -KILL "$pid" || return 1
+            fi
+        fi
+    fi
+    "$CMD" --cleanup-runtime >> "$LOG_FILE" 2>&1 || return 1
+    rm -f -- "$PID_FILE" "${DATA_LIBRARY_PATH}/service.pid" "${TRIM_APPDEST}/web.sock"
+    log_msg "OpenChamber Admin 与托管服务已停止。"
+}
+
+case "${1:-}" in
+    start) start_process ;;
+    stop) stop_process ;;
+    status) if status; then exit 0; else exit 3; fi ;;
+    *) exit 1 ;;
+esac

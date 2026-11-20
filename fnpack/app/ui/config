@@ -1,0 +1,30 @@
+{
+    ".url": {
+        "openchamber.Application": {
+            "title": "OpenChamber Admin",
+            "icon": "images/icon_{0}.png",
+            "type": "iframe",
+            "protocol": "http",
+            "gatewaySocket": "web.sock",
+            "gatewayPrefix": "/app/openchamber",
+            "url": "/app/openchamber/",
+            "allUsers": false,
+            "control": {
+                "accessPerm": "readonly",
+                "fullUrlPerm": "readonly",
+                "portPerm": "readonly",
+                "pathPerm": "readonly"
+            }
+        },
+        "openchamber.ui.Application": {
+            "title": "OpenChamber WebUI",
+            "icon": "images/icon_{0}.png",
+            "type": "iframe",
+            "protocol": "http",
+            "gatewaySocket": "web.sock",
+            "gatewayPrefix": "/app/openchamber",
+            "url": "/app/openchamber/fngateway/",
+            "allUsers": false
+        }
+    }
+}

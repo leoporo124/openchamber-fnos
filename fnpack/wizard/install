@@ -1,0 +1,37 @@
+[
+    {
+        "stepTitle": "存储与运行配置",
+        "items": [
+            {
+                "type": "radio",
+                "field": "wizard_data_library_type",
+                "label": "OpenChamber 存储位置",
+                "initValue": "data",
+                "options": [
+                    {"label": "共享目录 (Share)", "value": "share"},
+                    {"label": "数据目录 (Data)", "value": "data"}
+                ],
+                "rules": [
+                    {"required": true, "message": "请选择 OpenChamber 存储位置"}
+                ]
+            },
+            {
+                "type": "radio",
+                "field": "wizard_openchamber_run_user",
+                "label": "OpenChamber 运行权限",
+                "initValue": "root",
+                "options": [
+                    {"label": "超级管理员 (Root)", "value": "root"},
+                    {"label": "普通用户 (Package)", "value": "openchamber"}
+                ],
+                "rules": [
+                    {"required": true, "message": "请选择 OpenChamber 运行权限"}
+                ]
+            },
+            {
+                "type": "tips",
+                "helpText": "<strong>注意：</strong>存储位置与运行权限仅限安装时选定，安装后请勿随意修改。默认使用 Data + Root；选择 Package 时，项目目录须向 openchamber 用户授予访问权限。无论选择哪种存储位置，系统都会在“应用文件”中创建 openchamber 共享目录；选择 Share 后，该目录也会保存配置、模型凭据和会话，请限制共享访问权限。安装完成后，在 OpenChamber Admin 中联网部署官方运行包。需要 Node.js 24.14.0 或更新的 24.x 版本，以及系统 Git。"
+            }
+        ]
+    }
+]
