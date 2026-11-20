@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -149,23 +148,19 @@ func startPreparedService() error {
 	case StatusRunning:
 		return fmt.Errorf("服务已在运行中")
 	}
-	if !isRuntimeReady() {
-		return fmt.Errorf("运行环境未就绪或核心依赖缺失")
-	}
-	pkg, err := readInstalledPackage(runtimeDir, "@openchamber", "web")
+	launch, err := inspectRuntime(runtimeDir)
 	if err != nil {
+		return fmt.Errorf("运行环境未就绪或核心依赖缺失: %w", err)
+	}
+	if err := checkRuntimePrerequisites(launch.nodeEngine); err != nil {
 		return err
 	}
-	if err := checkRuntimePrerequisites(pkg.Engines["node"]); err != nil {
-		return err
-	}
-	return startLocked()
+	return startLocked(launch.cliPath)
 }
 
-func startLocked() error {
+func startLocked(cli string) error {
 	cleanupServiceLocked()
 	cfg := GetConfig()
-	cli := filepath.Join(runtimeDir, "node_modules", "@openchamber", "web", "bin", "cli.js")
 	cmd := exec.Command(nodeBin(), cli, "serve", "--foreground", "--host", "127.0.0.1", "--port", strconv.Itoa(cfg.GetServerPort()))
 	cmd.Dir = globalHomeDir
 	output := NewLogWriter()

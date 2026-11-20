@@ -17,6 +17,7 @@ const minWebVersion = "2.7.0"
 type npmPackage struct {
 	Name         string            `json:"name"`
 	Version      string            `json:"version"`
+	Bin          json.RawMessage   `json:"bin"`
 	Dependencies map[string]string `json:"dependencies"`
 	Engines      map[string]string `json:"engines"`
 }

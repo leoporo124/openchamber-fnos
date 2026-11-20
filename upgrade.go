@@ -111,26 +111,46 @@ func currentRuntimeVersion() string {
 	return GetVersion()
 }
 
+type runtimeLaunch struct {
+	cliPath    string
+	nodeEngine string
+}
+
 func validateRuntime(dir string) error {
+	_, err := inspectRuntime(dir)
+	return err
+}
+
+func inspectRuntime(dir string) (runtimeLaunch, error) {
 	pkg, err := readInstalledPackage(dir, "@openchamber", "web")
 	if err != nil || pkg.Name != webPackageName {
-		return fmt.Errorf("OpenChamber 运行包缺失或格式无效")
+		return runtimeLaunch{}, fmt.Errorf("OpenChamber 运行包缺失或格式无效")
 	}
 	release, err := releaseFromPackage(pkg)
 	if err != nil {
-		return err
+		return runtimeLaunch{}, err
 	}
 	code, err := readInstalledPackage(dir, "@opencode", "cli")
 	if err != nil || code.Name != openCodePackageName || code.Version != release.CodeVersion {
-		return fmt.Errorf("运行包的 OpenCode CLI 与 client/schema 版本不一致")
+		return runtimeLaunch{}, fmt.Errorf("运行包的 OpenCode CLI 与 client/schema 版本不一致")
 	}
-	for _, rel := range []string{"@openchamber/web/bin/cli.js", "@openchamber/web/dist/index.html", "@opencode/cli/bin/opencode.exe"} {
+
+	var bins map[string]string
+	if err := json.Unmarshal(pkg.Bin, &bins); err != nil || bins["openchamber"] == "" {
+		return runtimeLaunch{}, fmt.Errorf("OpenChamber 运行包未声明 openchamber CLI 入口")
+	}
+	cli, err := filepath.Localize(strings.TrimPrefix(bins["openchamber"], "./"))
+	if err != nil || cli == "." {
+		return runtimeLaunch{}, fmt.Errorf("OpenChamber 运行包声明的 CLI 入口路径无效")
+	}
+	cliRel := filepath.Join("@openchamber", "web", cli)
+	for _, rel := range []string{cliRel, "@openchamber/web/dist/index.html", "@opencode/cli/bin/opencode.exe"} {
 		info, err := os.Stat(filepath.Join(dir, "node_modules", filepath.FromSlash(rel)))
 		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
-			return fmt.Errorf("运行包入口缺失: %s", rel)
+			return runtimeLaunch{}, fmt.Errorf("运行包入口缺失: %s", rel)
 		}
 	}
-	return nil
+	return runtimeLaunch{cliPath: filepath.Join(dir, "node_modules", cliRel), nodeEngine: release.NodeEngine}, nil
 }
 
 func Upgrade(version string) error       { return queueDeployment(version, true) }
