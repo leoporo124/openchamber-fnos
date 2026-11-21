@@ -128,7 +128,13 @@ func proxyWithAuth(next http.Handler, prefix string) http.Handler {
 			return
 		}
 
-		pwd := GetConfig().AccessPassword
+		cfg := GetConfig()
+		// 配置刚变更时，旧监听器可能仍在处理请求。只使用实际连接的对端地址。
+		if prefix == "" && !cfg.allowsRemoteProxy() && !isLoopbackPeer(r.RemoteAddr) {
+			http.Error(w, "请在 OpenChamber Admin 中设置访问密码后再使用独立端口", http.StatusForbidden)
+			return
+		}
+		pwd := cfg.AccessPassword
 		if pwd == "" {
 			serveManagedWebUI(next, w, r, prefix)
 			return
@@ -245,6 +251,11 @@ func proxyWithAuth(next http.Handler, prefix string) http.Handler {
 	})
 }
 
+func isLoopbackPeer(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	return err == nil && net.ParseIP(host).IsLoopback()
+}
+
 // serveManagedWebUI 承接飞牛目录定位与官方更新的宿主适配。
 func serveManagedWebUI(next http.Handler, w http.ResponseWriter, r *http.Request, prefix string) {
 	if strings.HasPrefix(r.URL.Path, prefix+fnOSAssetsPath) {
@@ -326,7 +337,7 @@ func startReverseProxyLocked() error {
 
 	cfg := GetConfig()
 	proxyTarget, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cfg.GetServerPort()))
-	proxyAddr := fmt.Sprintf("0.0.0.0:%d", cfg.GetProxyPort())
+	proxyAddr := cfg.proxyListenAddress()
 
 	errHandler := func(w http.ResponseWriter, r *http.Request, err error) {
 		// 过滤客户端主动断开连接/取消请求的正常行为
@@ -351,6 +362,7 @@ func startReverseProxyLocked() error {
 			pr.SetXForwarded()
 			pr.Out.Host = proxyTarget.Host
 			pr.Out.Header.Set("Accept-Encoding", "identity")
+			prepareDevServerDiscovery(pr.Out)
 			if strings.Contains(pr.In.Header.Get("Accept"), "text/html") {
 				pr.Out.Header.Del("If-None-Match")
 				pr.Out.Header.Del("If-Modified-Since")
@@ -360,6 +372,9 @@ func startReverseProxyLocked() error {
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			if err := filterDevServerDiscovery(resp); err != nil {
+				return err
+			}
 			// 改写上游重定向地址，去除回环主机头防止协议漂移
 			if loc := resp.Header.Get("Location"); loc != "" {
 				if u, err := url.Parse(loc); err == nil && u.Host != "" {
@@ -390,7 +405,7 @@ func startReverseProxyLocked() error {
 	}
 
 	// 建立 TCP 监听器
-	ln, err := net.Listen("tcp", proxyAddr)
+	ln, err := net.Listen("tcp4", proxyAddr)
 	if err != nil {
 		LogWarning("[代理] 端口监听失败 [%s]: %s", proxyAddr, err)
 		return err

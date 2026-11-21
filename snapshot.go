@@ -677,11 +677,17 @@ func restoreSnapshot(meta SnapshotMeta, wasRunning bool) error {
 	if restoredConfig.Version != meta.OpenChamberVersion {
 		return fmt.Errorf("快照配置与版本信息不一致")
 	}
-	for _, port := range []int{restoredConfig.GetServerPort(), restoredConfig.GetProxyPort()} {
-		currentConfig := GetConfig()
-		if port != currentConfig.GetServerPort() && port != currentConfig.GetProxyPort() {
-			if err := checkPortAvailable(port); err != nil {
-				return fmt.Errorf("快照配置的端口 %d 已被占用，请释放端口后还原", port)
+	currentConfig := GetConfig()
+	for _, endpoint := range []struct {
+		port    int
+		address string
+	}{
+		{restoredConfig.GetServerPort(), fmt.Sprintf("127.0.0.1:%d", restoredConfig.GetServerPort())},
+		{restoredConfig.GetProxyPort(), restoredConfig.proxyListenAddress()},
+	} {
+		if endpoint.port != currentConfig.GetServerPort() && endpoint.port != currentConfig.GetProxyPort() {
+			if err := checkTCPAddressAvailable(endpoint.address); err != nil {
+				return fmt.Errorf("快照配置的端口 %d 已被占用，请释放端口后还原", endpoint.port)
 			}
 		}
 	}
@@ -689,7 +695,6 @@ func restoreSnapshot(meta SnapshotMeta, wasRunning bool) error {
 	if err != nil {
 		return err
 	}
-	currentConfig := GetConfig()
 	restoredConfig.DataLibraryPath = globalPkgVar
 	restoredConfig.BuildTime = currentConfig.BuildTime
 	if hasRuntimeChange {

@@ -91,7 +91,7 @@
                             <Help />
                           </n-icon>
                         </template>
-                        对外提供 WebUI 访问的代理端口，默认 3001
+                        WebUI 的独立代理端口，默认 3001。未设置访问密码时仅监听 NAS 本机。
                       </n-tooltip>
                     </div>
                   </template>
@@ -134,12 +134,12 @@
                             <Help />
                           </n-icon>
                         </template>
-                        飞牛网关与独立代理端口共用的附加密码。留空时飞牛入口仍需管理员登录，但独立代理端口没有密码保护。
+                        飞牛网关与独立代理端口共用的附加密码。留空时飞牛入口仍需管理员登录，独立代理端口仅允许 NAS 本机连接。
                       </n-tooltip>
                     </div>
                   </template>
                   <n-input type="password" show-password-on="click" v-model:value="config.access_password"
-                    placeholder="留空则不启用密码保护" autocomplete="new-password" />
+                    placeholder="使用独立端口远程访问时必填" autocomplete="new-password" />
                 </n-form-item>
               </n-gi>
 
@@ -172,6 +172,12 @@
                     </n-radio-button>
                   </n-radio-group>
                 </n-form-item>
+              </n-gi>
+
+              <n-gi v-if="usesGatewayFallback" span="2">
+                <n-alert type="warning">
+                  未设置访问密码时，概览按钮将使用飞牛网关。要从其他设备访问独立端口，请先设置密码。
+                </n-alert>
               </n-gi>
 
               <!-- 自定义外部地址输入框 (仅在选中自定义地址时动态渲染) -->
@@ -307,7 +313,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onActivated, onUnmounted } from 'vue'
+import { computed, ref, watch, onActivated, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   NCard,
@@ -363,6 +369,8 @@ const {
   isHeapMemoryChanged,
   isProxyRuntimeChanged
 } = storeToRefs(configStore)
+
+const usesGatewayFallback = computed(() => config.value.access_mode === 'port' && !config.value.access_password?.trim())
 
 // 堆内存上限选项
 const heapMemoryOptions = [

@@ -233,13 +233,13 @@ export const useSystemStore = defineStore('system', () => {
       return
     }
 
-    if (mode === 'port') {
-      const port = cfg?.proxy_port || 3001
+    if (mode === 'port' && cfg?.access_password?.trim()) {
+      const port = cfg.proxy_port || 3001
       await trimSdk.openURL(`http://${window.location.hostname}:${port}/`, '_blank')
       return
     }
 
-    // 默认飞牛网关直连模式
+    // 未设置访问密码的旧端口配置也回到飞牛网关。
     const gatewayUrl = `${window.location.origin}/app/openchamber/fngateway/`
     await trimSdk.openURL(gatewayUrl, '_blank')
   }

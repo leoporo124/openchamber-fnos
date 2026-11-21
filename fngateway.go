@@ -89,6 +89,9 @@ func handleFnGateway(c *gin.Context) {
 
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			if err := filterDevServerDiscovery(resp); err != nil {
+				return err
+			}
 			contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 
 			// 改写重定向地址

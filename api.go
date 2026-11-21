@@ -571,9 +571,9 @@ func handleGetConfig(c *gin.Context) {
 	OK(c, configResponse())
 }
 
-// checkPortAvailable 检测 TCP 端口是否可用
-func checkPortAvailable(port int) error {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+// checkTCPAddressAvailable 按服务实际的监听地址检查端口。
+func checkTCPAddressAvailable(address string) error {
+	ln, err := net.Listen("tcp4", address)
 	if err != nil {
 		return err
 	}
@@ -612,19 +612,20 @@ func handleSaveConfig(c *gin.Context) {
 	}
 	serverPortChanged := oldCfg.ServerPort != cfg.ServerPort
 	proxyPortChanged := oldCfg.ProxyPort != cfg.ProxyPort
+	proxyAddressChanged := oldCfg.proxyListenAddress() != cfg.proxyListenAddress()
 	heapMemChanged := oldCfg.HeapMemoryLimit != cfg.HeapMemoryLimit
 	proxyRuntimeChanged := oldCfg.ProxyRuntime != cfg.ProxyRuntime ||
 		(cfg.ProxyRuntime && (oldCfg.NetworkProxy != cfg.NetworkProxy || oldCfg.GetNpmRegistry() != cfg.GetNpmRegistry()))
 
 	if serverPortChanged {
-		if err := checkPortAvailable(cfg.ServerPort); err != nil {
+		if err := checkTCPAddressAvailable(fmt.Sprintf("127.0.0.1:%d", cfg.ServerPort)); err != nil {
 			Fail(c, http.StatusBadRequest, fmt.Sprintf("内部监听端口 %d 已被占用，请更换端口", cfg.ServerPort))
 			return
 		}
 	}
 
 	if proxyPortChanged {
-		if err := checkPortAvailable(cfg.ProxyPort); err != nil {
+		if err := checkTCPAddressAvailable(cfg.proxyListenAddress()); err != nil {
 			Fail(c, http.StatusBadRequest, fmt.Sprintf("反向代理端口 %d 已被占用，请更换端口", cfg.ProxyPort))
 			return
 		}
@@ -641,7 +642,7 @@ func handleSaveConfig(c *gin.Context) {
 		if err := startService(); err != nil {
 			state.SetStatus(StatusStopped, "设置已保存，服务重启失败: "+err.Error())
 		}
-	} else if proxyPortChanged {
+	} else if proxyAddressChanged {
 		restartReverseProxy()
 	}
 

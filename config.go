@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +63,18 @@ func (c Config) GetProxyPort() int {
 		return 3001
 	}
 	return c.ProxyPort
+}
+
+func (c Config) allowsRemoteProxy() bool {
+	return strings.TrimSpace(c.AccessPassword) != ""
+}
+
+func (c Config) proxyListenAddress() string {
+	host := "127.0.0.1"
+	if c.allowsRemoteProxy() {
+		host = "0.0.0.0"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(c.GetProxyPort()))
 }
 
 func (c Config) GetNpmRegistry() string {
