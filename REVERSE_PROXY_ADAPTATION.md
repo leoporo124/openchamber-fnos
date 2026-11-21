@@ -1,6 +1,6 @@
 # OpenChamber 反向代理与飞牛网关适配
 
-本说明对应 Admin `0.1.8`；代理适配以官方 `@openchamber/web@2.7.0` 发布包为核对基线，管理器允许从 `latest/canary` 安装满足版本要求的发布包。fnOS 桌面、手机 App、FnConnect 和外部反代需分别验证。
+本说明对应 Admin `0.1.9`；代理适配以官方 `@openchamber/web@2.7.0` 发布包为核对基线，管理器允许从 `latest/canary` 安装满足版本要求的发布包。fnOS 桌面、手机 App、FnConnect 和外部反代需分别验证。
 
 ## 入口
 

@@ -1,4 +1,5 @@
 import { trimSdk } from './utils/trimSdk'
+import { installLanDevServerShortcuts } from './devServerShortcut'
 
 const gatewayPrefix = '/app/openchamber/fngateway'
 const hostConnectTimeoutMs = 15000
@@ -11,6 +12,7 @@ const nativeFetch = window.fetch.bind(window)
 const hostReady = trimSdk.sdk.ready()
 // 连接可能先于用户操作失败；先标记为已处理，原 Promise 仍交给定位流程报错。
 void hostReady.catch(() => {})
+installLanDevServerShortcuts()
 
 function revealError(status: number, message: string): Response {
   return Response.json({ error: message }, { status })

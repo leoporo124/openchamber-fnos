@@ -44,7 +44,11 @@ function createBridge({ standalone = false, response } = {}) {
     clearTimeout(id) { timers.delete(id) }
   }
   runInNewContext(outputText, {
-    require(id) { assert.equal(id, './utils/trimSdk'); return { trimSdk } },
+    require(id) {
+      if (id === './devServerShortcut') return { installLanDevServerShortcuts() {} }
+      assert.equal(id, './utils/trimSdk')
+      return { trimSdk }
+    },
     exports: {}, window, document: { baseURI: `${origin}${gatewayPrefix}/` },
     location: new URL(origin), URL, Request, Response, Headers, Error
   })
