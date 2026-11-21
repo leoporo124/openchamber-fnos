@@ -9,7 +9,7 @@ OpenChamber 的飞牛 fnOS 原生部署与管理应用，支持 x86_64。
 
 ## 使用
 
-从 [GitHub Releases](https://github.com/leoobear/openchamber-fnos/releases/latest) 下载 `openchamber-x86.fpk`，同页提供 SHA-256 校验文件。
+从 [GitHub Releases](https://github.com/leoporo124/openchamber-fnos/releases/latest) 下载 `openchamber-x86.fpk`，同页提供 SHA-256 校验文件。
 
 1. 安装 `openchamber-x86.fpk`，按提示安装 `nodejs_v24`，确认系统 Git 可用。
 2. 打开 **OpenChamber Admin**，在概览中联网部署运行环境。

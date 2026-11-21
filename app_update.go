@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const appReleasesURL = "https://github.com/leoobear/openchamber-fnos/releases/latest"
+const appReleasesURL = "https://github.com/leoporo124/openchamber-fnos/releases/latest"
 
 var appUpdate struct {
 	sync.RWMutex

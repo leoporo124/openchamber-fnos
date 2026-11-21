@@ -135,6 +135,7 @@ const appStore = useAppStore()
 const systemStore = useSystemStore()
 const appHasUpdate = computed(() => systemStore.statusData.app_has_update)
 const appRemoteVersion = computed(() => systemStore.statusData.app_remote_version)
+const repositoryUrl = 'https://github.com/leoporo124/openchamber-fnos'
 const iconUrl = `${import.meta.env.BASE_URL}favicon.svg`
 const osTheme = useOsTheme()
 const themeMode = ref<'light' | 'dark'>(osTheme.value === 'dark' ? 'dark' : 'light')
@@ -217,8 +218,8 @@ const currentView = computed(() => views[tab.value])
 
 function openRepo() {
   const url = appHasUpdate.value
-    ? 'https://github.com/leoobear/openchamber-fnos/releases/latest'
-    : 'https://github.com/leoobear/openchamber-fnos'
+    ? `${repositoryUrl}/releases/latest`
+    : repositoryUrl
   trimSdk.openURL(url, '_blank')
 }
 
