@@ -31,15 +31,11 @@ func fetchAppUpdate() {
 		return
 	}
 	request.Header.Set("User-Agent", "OpenChamber-fnOS")
-	transport := &http.Transport{}
-	defer transport.CloseIdleConnections()
-	if proxy := GetConfig().NetworkProxy; proxy != "" {
-		proxyURL, err := url.Parse(proxy)
-		if err != nil {
-			return
-		}
-		transport.Proxy = http.ProxyURL(proxyURL)
+	transport, err := GetConfig().outboundTransport(true)
+	if err != nil {
+		return
 	}
+	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {

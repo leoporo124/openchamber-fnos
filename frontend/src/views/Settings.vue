@@ -255,12 +255,12 @@
                           <Help />
                         </n-icon>
                       </template>
-                      部署时外部下载使用此代理，所选国内 NPM 镜像源绕过代理；留空直接连接。SOCKS5 仅供 npm 部署使用，服务进程请使用 HTTP 或混合端口。
+                      部署时外部下载使用此代理，所选国内 NPM 镜像源绕过代理。留空时优先使用 NAS 本机的 HTTP／混合代理（127.0.0.1:7890），端口未监听时直连。SOCKS5 仅供部署使用。
                     </n-tooltip>
                   </div>
                 </template>
                 <n-input v-model:value="config.network_proxy"
-                  placeholder="例如 http://192.168.0.105:7890" clearable />
+                  placeholder="留空自动使用 NAS 本机代理" clearable />
               </n-form-item>
 
               <div class="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-1.5">
@@ -277,11 +277,10 @@
                       启用后向 OpenChamber、OpenCode 及其子进程传递 HTTP_PROXY / HTTPS_PROXY 和 npm 代理配置，并启用 Node.js 环境代理。
                     </n-tooltip>
                   </div>
-                  <n-switch v-model:value="config.proxy_runtime" :disabled="!config.network_proxy?.trim()"
-                    size="medium" class="shrink-0" />
+                  <n-switch v-model:value="config.proxy_runtime" size="medium" class="shrink-0" />
                 </div>
                 <div class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  会话内访问 GitHub、Git HTTPS 操作和插件安装需开启此项；保存后会重启运行中的服务。Clash 需允许局域网连接，并开放 HTTP 或混合端口。
+                  开启后，会话内访问 GitHub、Git HTTPS 操作和插件安装也使用此代理；地址可留空。更改运行时代理设置会重启运行中的服务。
                 </div>
               </div>
             </div>
@@ -515,7 +514,7 @@ async function handleSave() {
       changes.push(`堆内存上限已由 ${oldMem} 变更为 ${newMem}`)
     }
     if (isProxyRuntimeChanged.value) {
-      const isNowEnabled = Boolean(config.value.network_proxy?.trim()) && Boolean(config.value.proxy_runtime)
+      const isNowEnabled = Boolean(config.value.proxy_runtime)
       changes.push(`服务进程代理将${isNowEnabled ? '启用或更新' : '关闭'}`)
     }
 

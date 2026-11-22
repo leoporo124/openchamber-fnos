@@ -57,10 +57,10 @@ export const useConfigStore = defineStore('config', () => {
   // 运行时网络代理变更需要重启服务。
   const isProxyRuntimeChanged = computed(() => {
     if (!savedConfig.value) return false
-    const oldEffective = Boolean(savedConfig.value.network_proxy) && Boolean(savedConfig.value.proxy_runtime)
-    const newEffective = Boolean(config.value.network_proxy) && Boolean(config.value.proxy_runtime)
+    const oldEffective = Boolean(savedConfig.value.proxy_runtime)
+    const newEffective = Boolean(config.value.proxy_runtime)
     return oldEffective !== newEffective || (newEffective && (
-      config.value.network_proxy !== savedConfig.value.network_proxy ||
+      config.value.network_proxy?.trim() !== savedConfig.value.network_proxy?.trim() ||
       config.value.npm_registry !== savedConfig.value.npm_registry
     ))
   })
@@ -130,9 +130,6 @@ export const useConfigStore = defineStore('config', () => {
     }
     saving.value = true
     try {
-      if (!config.value.network_proxy?.trim()) {
-        config.value.proxy_runtime = false
-      }
       const res = await configApi.saveConfig(config.value, savedConfig.value.revision)
       if (res.success && res.data) {
         config.value = { ...res.data }

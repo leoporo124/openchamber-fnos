@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,7 +15,11 @@ import (
 	"time"
 )
 
-const DefaultNpmRegistry = "https://registry.npmmirror.com"
+const (
+	DefaultNpmRegistry  = "https://registry.npmmirror.com"
+	nasNetworkProxyPort = 7890
+	nasNetworkProxyAddr = "127.0.0.1:7890"
+)
 
 var proxyEnvNames = []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy", "npm_config_proxy", "npm_config_https_proxy", "npm_config_noproxy", "NO_PROXY", "no_proxy", "NODE_USE_ENV_PROXY"}
 
@@ -150,14 +155,52 @@ func (c Config) usesOfficialRegistry() bool {
 	return err == nil && strings.EqualFold(u.Hostname(), "registry.npmjs.org")
 }
 
-func (c Config) proxyBypass() string {
+func (c Config) resolveNetworkProxy(nasProxyAvailable func() bool) string {
+	if proxy := strings.TrimSpace(c.NetworkProxy); proxy != "" {
+		return proxy
+	}
+	if c.GetServerPort() == nasNetworkProxyPort || c.GetProxyPort() == nasNetworkProxyPort {
+		return ""
+	}
+	if nasProxyAvailable() {
+		return "http://" + nasNetworkProxyAddr
+	}
+	return ""
+}
+
+func (c Config) networkProxyURL() string {
+	return c.resolveNetworkProxy(func() bool {
+		conn, err := net.DialTimeout("tcp4", nasNetworkProxyAddr, 200*time.Millisecond)
+		if err != nil {
+			return false
+		}
+		_ = conn.Close()
+		return true
+	})
+}
+
+func (c Config) outboundTransport(allowProxy bool) (*http.Transport, error) {
+	transport := &http.Transport{}
+	if allowProxy {
+		if proxy := c.networkProxyURL(); proxy != "" {
+			proxyURL, err := url.Parse(proxy)
+			if err != nil {
+				return nil, fmt.Errorf("网络代理地址无效")
+			}
+			transport.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+	return transport, nil
+}
+
+func (c Config) proxyBypass(proxy string) string {
 	hosts := "localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.local,registry.npmmirror.com,npmmirror.com"
 	if !c.usesOfficialRegistry() {
 		if u, err := url.Parse(c.GetNpmRegistry()); err == nil && u.Hostname() != "" {
 			hosts += "," + u.Hostname()
 		}
 	}
-	if u, err := url.Parse(c.NetworkProxy); err == nil && u.Hostname() != "" {
+	if u, err := url.Parse(proxy); err == nil && u.Hostname() != "" && u.Hostname() != "127.0.0.1" {
 		hosts += "," + u.Hostname()
 	}
 	return hosts
@@ -179,15 +222,23 @@ func withoutProxyEnv() []string {
 }
 
 func networkProxyEnv(cfg Config, isEnabled bool) []string {
-	bypass := cfg.proxyBypass()
+	proxy := ""
+	if isEnabled {
+		proxy = cfg.networkProxyURL()
+	}
+	return proxyEnv(cfg, proxy)
+}
+
+func proxyEnv(cfg Config, proxy string) []string {
+	bypass := cfg.proxyBypass(proxy)
 	env := []string{"NO_PROXY=" + bypass, "no_proxy=" + bypass, "npm_config_noproxy=" + bypass}
-	if !isEnabled || cfg.NetworkProxy == "" {
+	if proxy == "" {
 		return env
 	}
 	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy", "npm_config_proxy", "npm_config_https_proxy"} {
-		env = append(env, key+"="+cfg.NetworkProxy)
+		env = append(env, key+"="+proxy)
 	}
-	if u, err := url.Parse(cfg.NetworkProxy); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+	if u, err := url.Parse(proxy); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
 		env = append(env, "NODE_USE_ENV_PROXY=1")
 	}
 	return env
@@ -228,8 +279,8 @@ func validateConfig(cfg Config) error {
 			return fmt.Errorf("%s必须是有效的 HTTP 或 HTTPS 地址", entry.label)
 		}
 	}
-	if cfg.NetworkProxy != "" {
-		u, err := url.Parse(cfg.NetworkProxy)
+	if proxy := strings.TrimSpace(cfg.NetworkProxy); proxy != "" {
+		u, err := url.Parse(proxy)
 		if err != nil || u.Hostname() == "" || u.RawQuery != "" || u.Fragment != "" ||
 			(u.Path != "" && u.Path != "/") || (u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "socks5" && u.Scheme != "socks5h") {
 			return fmt.Errorf("网络代理地址必须是有效的 HTTP、HTTPS 或 SOCKS5 地址")

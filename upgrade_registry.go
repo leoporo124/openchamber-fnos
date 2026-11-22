@@ -46,15 +46,11 @@ func fetchNpmJSON(cfg Config, name, version string, target any) error {
 	}
 	req.Header.Set("Accept", "application/vnd.npm.install-v1+json")
 	req.Header.Set("User-Agent", "OpenChamber-fnOS")
-	transport := &http.Transport{}
-	defer transport.CloseIdleConnections()
-	if cfg.NetworkProxy != "" && cfg.usesOfficialRegistry() {
-		proxyURL, err := url.Parse(cfg.NetworkProxy)
-		if err != nil {
-			return fmt.Errorf("网络代理地址无效")
-		}
-		transport.Proxy = http.ProxyURL(proxyURL)
+	transport, err := cfg.outboundTransport(cfg.usesOfficialRegistry())
+	if err != nil {
+		return err
 	}
+	defer transport.CloseIdleConnections()
 	resp, err := (&http.Client{Transport: transport}).Do(req)
 	if err != nil {
 		return fmt.Errorf("获取 %s 元数据失败，请检查依赖源与网络代理", name)

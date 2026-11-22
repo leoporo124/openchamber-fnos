@@ -79,9 +79,8 @@ func handleFnGateway(c *gin.Context) {
 			}
 
 			// 改写回环请求头与安全上下文
-			pr.Out.Host = fmt.Sprintf("127.0.0.1:%d", serverPort)
-			pr.Out.Header.Set("Host", fmt.Sprintf("127.0.0.1:%d", serverPort))
-			pr.Out.Header.Set("Origin", fmt.Sprintf("http://127.0.0.1:%d", serverPort))
+			pr.Out.Host = targetURL.Host
+			rewriteOpenChamberOrigin(pr, targetURL.String(), true)
 			pr.Out.Header.Set("Sec-Fetch-Site", "same-origin")
 			pr.Out.Header.Set("Accept-Encoding", "identity")
 			pr.Out.Header.Del("If-None-Match")

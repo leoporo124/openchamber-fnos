@@ -600,6 +600,7 @@ func handleSaveConfig(c *gin.Context) {
 		Fail(c, http.StatusConflict, "服务正在启动中，请稍候再保存")
 		return
 	}
+	cfg.NetworkProxy = strings.TrimSpace(cfg.NetworkProxy)
 	if err := validateConfig(cfg); err != nil {
 		Fail(c, http.StatusBadRequest, err.Error())
 		return
@@ -615,7 +616,7 @@ func handleSaveConfig(c *gin.Context) {
 	proxyAddressChanged := oldCfg.proxyListenAddress() != cfg.proxyListenAddress()
 	heapMemChanged := oldCfg.HeapMemoryLimit != cfg.HeapMemoryLimit
 	proxyRuntimeChanged := oldCfg.ProxyRuntime != cfg.ProxyRuntime ||
-		(cfg.ProxyRuntime && (oldCfg.NetworkProxy != cfg.NetworkProxy || oldCfg.GetNpmRegistry() != cfg.GetNpmRegistry()))
+		(cfg.ProxyRuntime && (strings.TrimSpace(oldCfg.NetworkProxy) != cfg.NetworkProxy || oldCfg.GetNpmRegistry() != cfg.GetNpmRegistry()))
 
 	if serverPortChanged {
 		if err := checkTCPAddressAvailable(fmt.Sprintf("127.0.0.1:%d", cfg.ServerPort)); err != nil {

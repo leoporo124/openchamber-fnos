@@ -256,6 +256,24 @@ func isLoopbackPeer(remoteAddr string) bool {
 	return err == nil && net.ParseIP(host).IsLoopback()
 }
 
+// rewriteOpenChamberOrigin runs after the entry point has validated the incoming origin.
+func rewriteOpenChamberOrigin(pr *httputil.ProxyRequest, upstreamOrigin string, alwaysSet bool) {
+	origin := pr.In.Header.Get("Origin")
+	if strings.EqualFold(pr.Out.Header.Get("Upgrade"), "websocket") {
+		// OpenChamber's WS validator prefers X-Forwarded-Host over Host. Keep the
+		// frontend host (also used for session cookies), even when fnOS strips its port.
+		if forwardedHost := pr.Out.Header.Get("X-Forwarded-Host"); origin != "" && forwardedHost != "" {
+			if parsed, err := url.Parse(origin); err == nil && parsed.Host != "" {
+				pr.Out.Header.Set("Origin", (&url.URL{Scheme: parsed.Scheme, Host: forwardedHost}).String())
+			}
+		}
+		return
+	}
+	if alwaysSet || origin != "" {
+		pr.Out.Header.Set("Origin", upstreamOrigin)
+	}
+}
+
 // serveManagedWebUI 承接飞牛目录定位与官方更新的宿主适配。
 func serveManagedWebUI(next http.Handler, w http.ResponseWriter, r *http.Request, prefix string) {
 	if strings.HasPrefix(r.URL.Path, prefix+fnOSAssetsPath) {
@@ -367,9 +385,7 @@ func startReverseProxyLocked() error {
 				pr.Out.Header.Del("If-None-Match")
 				pr.Out.Header.Del("If-Modified-Since")
 			}
-			if pr.Out.Header.Get("Origin") != "" {
-				pr.Out.Header.Set("Origin", fmt.Sprintf("%s://%s", proxyTarget.Scheme, proxyTarget.Host))
-			}
+			rewriteOpenChamberOrigin(pr, proxyTarget.String(), false)
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			if err := filterDevServerDiscovery(resp); err != nil {
