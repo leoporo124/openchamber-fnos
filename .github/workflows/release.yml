@@ -46,6 +46,7 @@ jobs:
           cp fnpack/openchamber.fpk openchamber-x86.fpk
           sha256sum openchamber-x86.fpk > SHA256SUMS
       - name: 上传构建产物
+        if: ${{ !inputs.publish_release }}
         uses: actions/upload-artifact@v4
         with:
           name: openchamber-x86_64
@@ -53,6 +54,7 @@ jobs:
             openchamber-x86.fpk
             SHA256SUMS
           if-no-files-found: error
+          retention-days: 1
       - name: 发布 GitHub Release
         if: inputs.publish_release
         env:

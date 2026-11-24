@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -27,12 +28,10 @@ const fnGatewayPrefix = basePath + "/fngateway"
 
 var cookiePathRegex = regexp.MustCompile(`(?i)\bpath\s*=\s*/(;|$)`)
 var rootHTMLAttribute = regexp.MustCompile(`(?i)\b(src|href)=(["'])/([^/])`)
+var fingerprintedAsset = regexp.MustCompile(`^/assets/[^/]+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$`)
 
 //go:embed templates/gateway_base.js
 var gatewayBaseScript string
-
-//go:embed templates/gateway_viewport.css
-var gatewayViewportStyle string
 
 // InitFnGateway 注册飞牛网关直连代理路由
 func InitFnGateway(base *gin.RouterGroup) {
@@ -55,11 +54,11 @@ func handleFnGateway(c *gin.Context) {
 	// 获取后端监听端口
 	serverPort := GetConfig().GetServerPort()
 	targetURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", serverPort))
+	gzipOK := acceptsGzip(strings.Join(c.Request.Header.Values("Accept-Encoding"), ","))
 
 	// 构建反向代理
 	proxy := &httputil.ReverseProxy{
-		Transport:     localTransport,
-		FlushInterval: -1,
+		Transport: localTransport,
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(targetURL)
 			pr.SetXForwarded()
@@ -82,10 +81,12 @@ func handleFnGateway(c *gin.Context) {
 			pr.Out.Host = targetURL.Host
 			rewriteOpenChamberOrigin(pr, targetURL.String(), true)
 			pr.Out.Header.Set("Sec-Fetch-Site", "same-origin")
-			pr.Out.Header.Set("Accept-Encoding", "identity")
-			pr.Out.Header.Del("If-None-Match")
-			pr.Out.Header.Del("If-Modified-Since")
-
+			if mayRewriteGatewayBody(pr.Out) {
+				pr.Out.Header.Set("Accept-Encoding", "identity")
+				for _, header := range []string{"If-None-Match", "If-Modified-Since", "Range", "If-Range"} {
+					pr.Out.Header.Del(header)
+				}
+			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			if err := filterDevServerDiscovery(resp); err != nil {
@@ -114,29 +115,27 @@ func handleFnGateway(c *gin.Context) {
 				return nil
 			}
 
-			// 改写页面标签并注入核心补丁脚本
-			if shouldRewriteWebUIHTML(resp) {
+			if shouldRewriteWebUIHTML(resp) && mayRewriteGatewayBody(resp.Request) {
 				return rewriteWebUIHTML(resp, fnGatewayPrefix)
 			}
-			if resp.Request.Method == http.MethodHead {
-				return nil
-			}
-			if strings.Contains(contentType, "manifest+json") && resp.Body != nil {
+			if resp.StatusCode == http.StatusOK && strings.Contains(contentType, "manifest+json") && resp.Body != nil && mayRewriteGatewayBody(resp.Request) {
 				body, err := io.ReadAll(resp.Body)
 				resp.Body.Close()
 				if err != nil {
 					return err
 				}
-				body = rewriteGatewayManifest(body)
-				resp.Body = io.NopCloser(bytes.NewReader(body))
-				resp.ContentLength = int64(len(body))
-				resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
+				setGatewayBody(resp, rewriteGatewayManifest(body))
 				resp.Header.Set("Cache-Control", "no-store")
-				resp.Header.Del("ETag")
-				resp.Header.Del("Last-Modified")
+				return nil
 			}
-			if resp.StatusCode == http.StatusOK && resp.Body != nil && isGatewayAsset(resp.Request.URL.Path, contentType) {
-				return rewriteGatewayAsset(resp)
+			if resp.Request.Method == http.MethodGet && resp.StatusCode == http.StatusOK && resp.Body != nil && isGatewayAsset(resp.Request.URL.Path, contentType) {
+				if err := rewriteGatewayAsset(resp); err != nil {
+					return err
+				}
+				return compressGatewayBody(resp, gzipOK)
+			}
+			if fingerprintedAsset.MatchString(resp.Request.URL.Path) && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusPartialContent) {
+				makeGatewayCachePrivate(resp)
 			}
 
 			return nil
@@ -178,9 +177,70 @@ func isWebUINavigation(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Mode") == "navigate" || strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
+// Restrict identity encoding and forced full responses to representations we edit.
+func mayRewriteGatewayBody(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	p := r.URL.Path
+	if isDevServerDiscovery(r) || p == "/sw.js" || strings.HasSuffix(p, ".webmanifest") {
+		return true
+	}
+	if strings.HasPrefix(p, "/assets/") {
+		return mayRewriteAssetPath(p)
+	}
+	return !strings.HasPrefix(p, "/api/") && (p == "/" || isWebUINavigation(r) || strings.HasSuffix(p, ".html"))
+}
+
 func isGatewayAsset(path, contentType string) bool {
-	return path == "/sw.js" || (strings.HasPrefix(path, "/assets/") &&
+	return path == "/sw.js" || (mayRewriteAssetPath(path) &&
 		(strings.Contains(contentType, "javascript") || strings.Contains(contentType, "text/css")))
+}
+
+func mayRewriteAssetPath(path string) bool {
+	return strings.HasPrefix(path, "/assets/") && (strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".mjs") || strings.HasSuffix(path, ".css"))
+}
+
+func makeGatewayCachePrivate(resp *http.Response) {
+	if cc := resp.Header.Get("Cache-Control"); strings.HasPrefix(cc, "public,") {
+		resp.Header.Set("Cache-Control", "private,"+strings.TrimPrefix(cc, "public,"))
+	}
+}
+
+func compressGatewayBody(resp *http.Response, gzipOK bool) error {
+	resp.Header.Add("Vary", "Accept-Encoding")
+	if resp.ContentLength < 1024 || !gzipOK {
+		return nil
+	}
+	defer resp.Body.Close()
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := io.Copy(writer, resp.Body); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	setGatewayBody(resp, compressed.Bytes())
+	resp.Header.Set("Content-Encoding", "gzip")
+	return nil
+}
+
+func acceptsGzip(encoding string) bool {
+	for _, value := range strings.Split(encoding, ",") {
+		name, weight, _ := strings.Cut(value, ";")
+		if !strings.EqualFold(strings.TrimSpace(name), "gzip") {
+			continue
+		}
+		if strings.TrimSpace(weight) == "" {
+			return true
+		}
+		key, q, _ := strings.Cut(strings.TrimSpace(weight), "=")
+		n, err := strconv.ParseFloat(strings.TrimSpace(q), 64)
+		return strings.EqualFold(strings.TrimSpace(key), "q") && err == nil && n > 0 && n <= 1
+	}
+	return false
 }
 
 // rewriteGatewayAsset 只在网关响应中适配官方资源路径。
@@ -196,12 +256,13 @@ func rewriteGatewayAsset(resp *http.Response) error {
 	if resp.Request.URL.Path == "/sw.js" {
 		body = append([]byte(gatewayWorkerScript+"\n"), body...)
 	}
-	resp.Body = io.NopCloser(bytes.NewReader(body))
-	resp.ContentLength = int64(len(body))
-	resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
-	resp.Header.Set("Cache-Control", "no-cache")
-	resp.Header.Del("ETag")
-	resp.Header.Del("Last-Modified")
+	setGatewayBody(resp, body)
+	if fingerprintedAsset.MatchString(resp.Request.URL.Path) && strings.Contains(resp.Header.Get("Cache-Control"), "immutable") &&
+		!strings.Contains(resp.Header.Get("Cache-Control"), "no-store") {
+		// The bytes depend on both the upstream filename and this adapter. Require
+		// periodic revalidation so updates to the adapter are not cached for a year.
+		resp.Header.Set("Cache-Control", "private, max-age=86400")
+	}
 	return nil
 }
 
@@ -239,7 +300,16 @@ func rewriteGatewayCookie(ck string) string {
 func rewriteFnGatewayHtml(body []byte) []byte {
 	modified := rootHTMLAttribute.ReplaceAll(body, []byte("${1}=${2}"+fnGatewayPrefix+"/${3}"))
 	modified = bytes.ReplaceAll(modified, []byte("const baseUrl = location.origin;"), []byte("const baseUrl = location.origin + "+strconv.Quote(fnGatewayPrefix)+";"))
-	return injectHtmlHead(modified, []byte("<base href=\""+fnGatewayPrefix+"/\"><style>"+gatewayViewportStyle+"</style><script>"+gatewayBaseScript+"</script>"))
+	return injectHtmlHead(modified, []byte("<base href=\""+fnGatewayPrefix+"/\"><script>"+gatewayBaseScript+"</script>"))
+}
+
+func setGatewayBody(resp *http.Response, body []byte) {
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	resp.ContentLength = int64(len(body))
+	resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	for _, field := range []string{"Accept-Ranges", "ETag", "Last-Modified"} {
+		resp.Header.Del(field)
+	}
 }
 
 func rewriteGatewayManifest(body []byte) []byte {

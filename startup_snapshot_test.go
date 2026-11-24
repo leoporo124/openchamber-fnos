@@ -1,8 +1,10 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,9 +17,15 @@ import (
 )
 
 func TestGatewayWaitsForReadiness(t *testing.T) {
+	const splash = `<div id="initial-loading"></div><script>
+// Fallback: hide loading screen after 10 seconds if React fails to load.
+setTimeout(function() { document.getElementById('initial-loading')?.remove() }, 10000);
+</script>`
+	const csp = "frame-ancestors 'self'"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, `<html><head></head><body id="root">upstream</body></html>`)
+		w.Header().Set("Content-Security-Policy", csp)
+		fmt.Fprint(w, `<html><head></head><body>`+splash+`</body></html>`)
 	}))
 	defer upstream.Close()
 	oldState, oldConfig := state, GetConfig()
@@ -57,8 +65,92 @@ func TestGatewayWaitsForReadiness(t *testing.T) {
 		t.Fatalf("probe not released after readiness: %d, %v", probe.Code, probe.Header())
 	}
 	page = request(http.MethodGet)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), fnGatewayPrefix+fnOSAssetsPath+"webui-startup.js") {
-		t.Fatalf("ready page did not receive startup fallback: %d, %q", page.Code, page.Body)
+	if body := page.Body.String(); page.Code != http.StatusOK || !strings.Contains(body, splash) ||
+		page.Header().Get("Content-Security-Policy") != csp || strings.Contains(body, "webui-startup.js") {
+		t.Fatalf("gateway changed the upstream splash or CSP: %d, %v", page.Code, page.Header())
+	}
+}
+
+func TestGatewayAssetDelivery(t *testing.T) {
+	const script = `/assets/main-abcd1234.js`
+	const unmodified = `/assets/font-abcd1234.woff2`
+	const raw = `const font = "/assets/font-abcd1234.woff2";` + "\n"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("ETag", `"original"`)
+		switch r.URL.Path {
+		case script:
+			if r.Header.Get("Accept-Encoding") != "identity" || r.Header.Get("If-None-Match") != "" || r.Header.Get("Range") != "" {
+				t.Errorf("rewritten asset must be fetched in full: %v", r.Header)
+			}
+			w.Header().Set("Content-Type", "text/javascript")
+			fmt.Fprint(w, strings.Repeat(raw, 100))
+		case unmodified:
+			if r.Header.Get("Accept-Encoding") != "br, gzip" || r.Header.Get("If-None-Match") != `"original"` {
+				t.Errorf("unmodified asset lost request headers: %v", r.Header)
+			}
+			w.WriteHeader(http.StatusNotModified)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	oldConfig := GetConfig()
+	configMu.Lock()
+	globalConfig = Config{ServerPort: upstream.Listener.Addr().(*net.TCPAddr).Port}
+	configMu.Unlock()
+	t.Cleanup(func() {
+		configMu.Lock()
+		globalConfig = oldConfig
+		configMu.Unlock()
+	})
+	router := gin.New()
+	InitFnGateway(router.Group(basePath))
+	request := func(path, encoding string) *httptest.ResponseRecorder {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, fnGatewayPrefix+path, nil)
+		req.Header.Set("Accept-Encoding", encoding)
+		req.Header.Set("If-None-Match", `"original"`)
+		if path == script {
+			req.Header.Set("Range", "bytes=0-15")
+		}
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		return res
+	}
+	want := strings.Repeat(strings.Replace(raw, "/assets/", fnGatewayPrefix+"/assets/", 1), 100)
+	for _, tt := range []struct {
+		encoding string
+		gzip     bool
+	}{{"br, gzip", true}, {"br, gzip;q=0", false}, {"identity", false}} {
+		res := request(script, tt.encoding)
+		if res.Code != http.StatusOK || (res.Header().Get("Content-Encoding") == "gzip") != tt.gzip ||
+			res.Header().Get("Vary") != "Accept-Encoding" || res.Header().Get("ETag") != "" ||
+			!strings.Contains(res.Header().Get("Cache-Control"), "private, max-age=") {
+			t.Fatalf("encoding %q: unexpected response %d %v", tt.encoding, res.Code, res.Header())
+		}
+		body := res.Body.String()
+		if tt.gzip {
+			reader, err := gzip.NewReader(res.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := io.ReadAll(reader)
+			reader.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			body = string(data)
+		}
+		if body != want {
+			t.Fatal("rewritten asset is incomplete or has the wrong prefix")
+		}
+	}
+	res := request(unmodified, "br, gzip")
+	if res.Code != http.StatusNotModified || res.Header().Get("ETag") != `"original"` ||
+		res.Header().Get("Cache-Control") != "private, max-age=31536000, immutable" {
+		t.Fatalf("unexpected unchanged asset response %d %v", res.Code, res.Header())
 	}
 }
 

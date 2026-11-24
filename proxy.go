@@ -42,7 +42,7 @@ var (
 	clientAuthRecord = make(map[string]*clientAuthStatus)
 	authSecret       [32]byte
 	authSecretOnce   sync.Once
-	localTransport   = &http.Transport{Proxy: nil, DisableCompression: true}
+	localTransport   = &http.Transport{DisableCompression: true, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}
 )
 
 func getAuthClientKey(r *http.Request) string {

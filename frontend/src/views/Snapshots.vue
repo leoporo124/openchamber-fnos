@@ -19,14 +19,14 @@
       </div>
     </div>
 
-    <div v-if="task || wsUnavailable || listError" class="space-y-2">
-      <div v-if="task" class="flex items-start justify-between gap-3 rounded-xl bg-fnos-card p-3 text-sm">
+    <div v-if="visibleTask || wsUnavailable || listError" class="space-y-2">
+      <div v-if="visibleTask" class="flex items-start justify-between gap-3 rounded-xl bg-fnos-card p-3 text-sm">
         <div role="status" class="min-w-0">
-          <p class="font-medium">{{ task.stage }}</p>
-          <p v-if="task.error" class="mt-1 break-words text-red-700 dark:text-red-400 select-text">{{ task.error }}</p>
+          <p class="font-medium">{{ visibleTask.stage }}</p>
+          <p v-if="visibleTask.error" class="mt-1 break-words text-red-700 dark:text-red-400 select-text">{{ visibleTask.error }}</p>
         </div>
-        <n-button v-if="task.active && task.action === 'create'" size="small" secondary type="error" class="shrink-0"
-          :disabled="!task.can_cancel || cancelLoading || wsUnavailable" @click="promptCancelCreate">
+        <n-button v-if="visibleTask.active && visibleTask.action === 'create'" size="small" secondary type="error" class="shrink-0"
+          :disabled="!visibleTask.can_cancel || cancelLoading || wsUnavailable" @click="promptCancelCreate">
           <template #icon><n-icon><X /></n-icon></template>
           取消
         </n-button>
@@ -175,7 +175,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   NAlert,
@@ -217,6 +217,13 @@ const {
   task
 } = storeToRefs(snapshotStore)
 const actionsDisabled = computed(() => loading.value || Boolean(listError.value) || actionLoading.value || wsUnavailable.value || isActionLocked.value)
+const visibleTask = computed(() => task.value?.active || task.value?.error ? task.value : null)
+
+watch(task, (current, previous) => {
+  if (previous?.active && current && !current.active && !current.error && current.action === previous.action) {
+    message.info(current.stage)
+  }
+})
 
 // 创建弹窗状态
 const showCreateModal = ref(false)

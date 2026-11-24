@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,23 +9,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 )
 
 const fnOSAssetsPath = "/_fnos/assets/"
 
-//go:embed templates/webui_startup.js
-var webUIStartupScript string
-
 func serveFnOSAssets(w http.ResponseWriter, r *http.Request, prefix string) {
-	if r.URL.Path == prefix+fnOSAssetsPath+"webui-startup.js" {
-		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		http.ServeContent(w, r, "webui-startup.js", time.Time{}, strings.NewReader(webUIStartupScript))
-		return
-	}
 	assets, err := fs.Sub(WebFS, "frontend/dist/assets")
 	if err != nil {
 		http.Error(w, "飞牛适配资源不可用", http.StatusInternalServerError)
@@ -51,19 +38,11 @@ func rewriteWebUIHTML(resp *http.Response, prefix string) error {
 	}
 	if prefix == fnGatewayPrefix {
 		body = rewriteFnGatewayHtml(body)
-		resp.Header.Del("Content-Security-Policy")
-		resp.Header.Del("Content-Security-Policy-Report-Only")
 	}
 	assets := prefix + fnOSAssetsPath
-	script := fmt.Sprintf(`<script async src="%swebui-startup.js"></script><script type="module" src="%sfnos-bridge.js"></script>`, assets, assets)
-	body = injectHtmlHead(body, []byte(script))
-	resp.Body = io.NopCloser(bytes.NewReader(body))
-	resp.ContentLength = int64(len(body))
-	resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	script := fmt.Sprintf(`<script type="module" src="%sfnos-bridge.js"></script>`, assets)
+	setGatewayBody(resp, injectHtmlHead(body, []byte(script)))
 	resp.Header.Set("Cache-Control", "no-store")
-	for _, header := range []string{"ETag", "Last-Modified"} {
-		resp.Header.Del(header)
-	}
 	return nil
 }
 

@@ -68,54 +68,6 @@
     return nativeSetAttribute.call(this, name, isUrl ? resolveGatewayUrl(value) : value);
   };
 
-  function findAttachmentPicker(target) {
-    const form = target.closest('form');
-    const editor = form?.querySelector('[data-testid="chat-input"]');
-    const dropZone = editor?.closest('.oc-surface-floating');
-    if (!dropZone?.contains(target) || !editor.querySelector('[contenteditable="true"]')) return null;
-    for (let container = form.parentElement; container && container !== document.body; container = container.parentElement) {
-      // 多列会话只能使用当前输入区的附件选择器。
-      if (container.querySelectorAll('[data-testid="chat-input"]').length !== 1) return null;
-      const pickers = container.querySelectorAll('input[type="file"][multiple]');
-      const candidates = Array.from(pickers).filter(input =>
-        input.accept.includes('image/png') && input.accept.includes('application/pdf'));
-      if (candidates.length > 0) return candidates.length === 1 ? candidates[0] : null;
-    }
-    return null;
-  }
-
-  // 网关中的本地文件拖入复用官方附件选择流程。
-  document.addEventListener('drop', event => {
-    const transfer = event.dataTransfer;
-    if (!transfer || !(event.target instanceof Element) ||
-      transfer.types.includes('application/x-openchamber-file-path')) return;
-    const picker = findAttachmentPicker(event.target);
-    if (!picker || picker.disabled || typeof DataTransfer !== 'function') return;
-    const items = Array.from(transfer.items);
-    if (items.some(item => item.webkitGetAsEntry?.()?.isDirectory)) return;
-    const files = Array.from(transfer.files);
-    if (files.length === 0) {
-      for (const item of items) {
-        if (item.kind !== 'file') continue;
-        const file = item.getAsFile();
-        if (file) files.push(file);
-      }
-    }
-    if (files.length === 0) return;
-    try {
-      const selection = new DataTransfer();
-      for (const file of files) selection.items.add(file);
-      picker.files = selection.files;
-    } catch (error) {
-      console.warn('[OpenChamber fnOS] 无法转交拖入附件', { error: error.name });
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    event.target.dispatchEvent(new Event('dragend', { bubbles: true }));
-    picker.dispatchEvent(new Event('change', { bubbles: true }));
-  }, true);
-
   // 网关页面使用固定子路径，避免上游根作用域 Service Worker 接管飞牛桌面。
   if (navigator.serviceWorker) {
     const register = navigator.serviceWorker.register.bind(navigator.serviceWorker);
