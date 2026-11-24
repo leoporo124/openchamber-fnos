@@ -71,6 +71,7 @@ func InitRoutes(r *gin.Engine) {
 	fileServer := http.FileServer(http.FS(sub))
 
 	base.GET("/", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-cache")
 		c.Request.URL.Path = "/"
 		fileServer.ServeHTTP(c.Writer, c.Request)
 	})
@@ -110,8 +111,7 @@ func InitRoutes(r *gin.Engine) {
 			fileServer.ServeHTTP(c.Writer, c.Request)
 			return
 		}
-		c.Request.URL.Path = "/"
-		fileServer.ServeHTTP(c.Writer, c.Request)
+		c.Status(http.StatusNotFound)
 	})
 }
 
@@ -247,7 +247,7 @@ func handleWS(c *gin.Context) {
 	defer unsubscribeWs()
 	snapCh, unsubscribeSnap := SubscribeSnapshot(16)
 	defer unsubscribeSnap()
-	snapProgressCh, unsubscribeSnapProgress := SubscribeSnapshotProgress(32)
+	snapProgressCh, unsubscribeSnapProgress := SubscribeSnapshotProgress()
 	defer unsubscribeSnapProgress()
 	usageCh, unsubscribeUsage := SubscribeUsage(16)
 	defer unsubscribeUsage()
@@ -287,12 +287,15 @@ func handleWS(c *gin.Context) {
 	if !sendMsg("status", statusPayload()) || !sendMsg("workspace", GetWorkspaces()) || !sendLogs() {
 		return
 	}
-	summary, err := ListSnapshots()
-	if err != nil {
-		LogWarning("[API] 读取快照列表失败: %s", err)
-		return
+	sendSnapshots := func() bool {
+		summary, err := ListSnapshots()
+		if err != nil {
+			LogWarning("[API] 读取快照列表失败: %s", err)
+			return sendMsg("snapshot_error", "无法读取快照列表，请查看运行日志")
+		}
+		return sendMsg("snapshot", summary)
 	}
-	if !sendMsg("snapshot", summary) {
+	if !sendSnapshots() {
 		return
 	}
 	if !sendMsg("snapshot_progress", GetCurrentSnapshotProgress()) {
@@ -326,12 +329,7 @@ func handleWS(c *gin.Context) {
 		case <-wsCh:
 			sent = sendMsg("workspace", GetWorkspaces())
 		case <-snapCh:
-			summary, err := ListSnapshots()
-			if err != nil {
-				LogWarning("[API] 读取快照列表失败: %s", err)
-				return
-			}
-			sent = sendMsg("snapshot", summary)
+			sent = sendSnapshots()
 		case <-snapProgressCh:
 			sent = sendMsg("snapshot_progress", GetCurrentSnapshotProgress())
 		case u := <-usageCh:

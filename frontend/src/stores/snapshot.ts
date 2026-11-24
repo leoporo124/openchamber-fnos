@@ -7,57 +7,19 @@ export const useSnapshotStore = defineStore('snapshot', () => {
   const snapshots = ref<SnapshotMeta[]>([])
   const totalSizeBytes = ref(0)
   const loading = ref(true)
-  const actionLoading = ref(false)
+  const listError = ref('')
+  const submitting = ref(false)
   const cancelLoading = ref(false)
-
-  // 页面切换时保留当前任务进度。
-  const progressVisible = ref(false)
-  const progressPercent = ref(0)
-  const progressStage = ref('')
-  const progressMessage = ref('')
-  const progressAction = ref<'create' | 'restore' | ''>('')
-
-  let hideTimer: ReturnType<typeof setTimeout> | null = null
-
-  const progressTitle = computed(() => {
-    if (progressMessage.value && progressStage.value) {
-      return `${progressStage.value} · ${progressMessage.value}`
-    }
-    if (progressStage.value) {
-      return progressStage.value
-    }
-    return progressAction.value === 'restore' ? '正在还原快照' : '正在处理快照'
-  })
+  const task = ref<SnapshotProgressTask | null>(null)
+  const actionLoading = computed(() => submitting.value || Boolean(task.value?.active))
 
   function updateProgress(data: SnapshotProgressTask) {
-    if (!data) return
-    progressAction.value = data.action === 'restore' || data.action === 'create' ? data.action : ''
-    progressPercent.value = Math.max(0, Math.min(100, data.percent))
-    progressStage.value = data.stage || ''
-    progressMessage.value = data.error || data.message || ''
-    actionLoading.value = Boolean(data.active)
-    if (data.active) {
-      clearHideTimer()
-      progressVisible.value = true
-      return
-    }
-    cancelLoading.value = false
-    if (!data.action) {
-      clearHideTimer()
-      progressVisible.value = false
-      return
-    }
-    if (progressVisible.value && !hideTimer) {
-      hideTimer = setTimeout(() => {
-        progressVisible.value = false
-        hideTimer = null
-      }, data.error ? 3000 : 1500)
-    }
+    task.value = data?.action ? data : null
   }
 
-  function clearHideTimer() {
-    if (hideTimer) clearTimeout(hideTimer)
-    hideTimer = null
+  function setListError(message: string) {
+    listError.value = message
+    loading.value = false
   }
 
   function updateSummary(summary: SnapshotSummary) {
@@ -65,70 +27,34 @@ export const useSnapshotStore = defineStore('snapshot', () => {
     snapshots.value = summary.items || []
     totalSizeBytes.value = summary.total_size_bytes || 0
     loading.value = false
-
-    if (summary.current_task) updateProgress(summary.current_task)
+    listError.value = ''
   }
 
-  async function createSnapshot(params: CreateSnapshotParams) {
-    clearHideTimer()
-    actionLoading.value = true
-    progressVisible.value = true
-    progressPercent.value = 0
-    progressAction.value = 'create'
-    progressStage.value = `正在启动快照创建任务「${params.name}」`
-    progressMessage.value = '准备执行环境'
-
+  async function submit<T>(request: () => Promise<T>) {
+    submitting.value = true
     try {
-      const res = await snapshotApi.create(params)
-      if (!res.success) {
-        progressVisible.value = false
-        actionLoading.value = false
-      }
-      return res
-    } catch (err) {
-      progressVisible.value = false
-      actionLoading.value = false
-      throw err
-    }
-  }
-
-  async function restoreSnapshot(id: string, name?: string) {
-    clearHideTimer()
-    actionLoading.value = true
-    progressVisible.value = true
-    progressPercent.value = 5
-    progressAction.value = 'restore'
-    progressStage.value = `正在启动快照还原任务「${name || id}」`
-    progressMessage.value = '校验并准备还原'
-
-    try {
-      const res = await snapshotApi.restore(id)
-      if (!res.success) {
-        progressVisible.value = false
-        actionLoading.value = false
-      }
-      return res
-    } catch (err) {
-      progressVisible.value = false
-      actionLoading.value = false
-      throw err
-    }
-  }
-
-  async function deleteSnapshot(id: string) {
-    actionLoading.value = true
-    try {
-      return await snapshotApi.delete(id)
+      return await request()
     } finally {
-      actionLoading.value = false
+      submitting.value = false
     }
+  }
+
+  function createSnapshot(params: CreateSnapshotParams) {
+    return submit(() => snapshotApi.create(params))
+  }
+
+  function restoreSnapshot(id: string) {
+    return submit(() => snapshotApi.restore(id))
+  }
+
+  function deleteSnapshot(id: string) {
+    return submit(() => snapshotApi.delete(id))
   }
 
   async function cancelCreateSnapshot() {
     cancelLoading.value = true
     try {
-      const res = await snapshotApi.cancel()
-      return res
+      return await snapshotApi.cancel()
     } finally {
       cancelLoading.value = false
     }
@@ -138,14 +64,11 @@ export const useSnapshotStore = defineStore('snapshot', () => {
     snapshots,
     totalSizeBytes,
     loading,
+    listError,
+    setListError,
     actionLoading,
     cancelLoading,
-    progressVisible,
-    progressPercent,
-    progressStage,
-    progressMessage,
-    progressAction,
-    progressTitle,
+    task,
     updateProgress,
     updateSummary,
     createSnapshot,

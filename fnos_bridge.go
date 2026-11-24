@@ -2,20 +2,32 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const fnOSAssetsPath = "/_fnos/assets/"
 
+//go:embed templates/webui_startup.js
+var webUIStartupScript string
+
 func serveFnOSAssets(w http.ResponseWriter, r *http.Request, prefix string) {
+	if r.URL.Path == prefix+fnOSAssetsPath+"webui-startup.js" {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeContent(w, r, "webui-startup.js", time.Time{}, strings.NewReader(webUIStartupScript))
+		return
+	}
 	assets, err := fs.Sub(WebFS, "frontend/dist/assets")
 	if err != nil {
 		http.Error(w, "飞牛适配资源不可用", http.StatusInternalServerError)
@@ -23,6 +35,11 @@ func serveFnOSAssets(w http.ResponseWriter, r *http.Request, prefix string) {
 	}
 	w.Header().Set("Cache-Control", "no-cache")
 	http.StripPrefix(prefix+fnOSAssetsPath, http.FileServer(http.FS(assets))).ServeHTTP(w, r)
+}
+
+func shouldRewriteWebUIHTML(resp *http.Response) bool {
+	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	return resp.Request != nil && resp.Request.Method == http.MethodGet && resp.StatusCode == http.StatusOK && mediaType == "text/html" && resp.Body != nil
 }
 
 // rewriteWebUIHTML 在宿主响应中加载飞牛文件管理适配。
@@ -37,7 +54,8 @@ func rewriteWebUIHTML(resp *http.Response, prefix string) error {
 		resp.Header.Del("Content-Security-Policy")
 		resp.Header.Del("Content-Security-Policy-Report-Only")
 	}
-	script := fmt.Sprintf(`<script type="module" src="%s%sfnos-bridge.js"></script>`, prefix, fnOSAssetsPath)
+	assets := prefix + fnOSAssetsPath
+	script := fmt.Sprintf(`<script async src="%swebui-startup.js"></script><script type="module" src="%sfnos-bridge.js"></script>`, assets, assets)
 	body = injectHtmlHead(body, []byte(script))
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))

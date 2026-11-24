@@ -2,7 +2,7 @@
   <div class="w-full flex-1 flex flex-col gap-3.5 sm:gap-6 pb-20 sm:pb-6">
     <!-- 页头：桌面与移动端响应式布局 -->
     <div
-      class="sticky -top-[14px] sm:-top-6 z-20 -mt-3.5 sm:-mt-4 pt-5 sm:pt-7 pb-2.5 bg-fnos-bg/90 backdrop-blur-md flex items-center justify-between gap-2.5 transition-all duration-200">
+      class="sticky -top-[14px] sm:-top-6 z-20 -mt-3.5 sm:-mt-4 pt-5 sm:pt-7 pb-2.5 bg-fnos-bg/90 backdrop-blur-md flex items-center justify-between gap-2.5">
       <div class="flex items-baseline gap-2 min-w-0">
         <h1 class="text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100 tracking-tight shrink-0">快照管理</h1>
         <span v-if="snapshots.length" class="text-xs text-slate-400 dark:text-slate-500 font-medium truncate"
@@ -12,46 +12,33 @@
       </div>
 
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        <n-button type="primary" size="small" :disabled="actionLoading" @click="openCreateModal"
+        <n-button type="primary" size="small" :disabled="actionsDisabled" @click="openCreateModal"
           class="!px-3 sm:!h-9 rounded-lg">
           创建快照
         </n-button>
       </div>
     </div>
 
-    <!-- 快照任务进行中进度条 -->
-    <n-collapse-transition :show="progressVisible">
-      <div
-        class="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-fnos-card border border-blue-100 dark:border-blue-900/40 shadow-sm flex flex-col gap-2">
-        <div class="flex items-center justify-between text-xs sm:text-sm gap-2">
-          <div class="flex items-center gap-2 font-medium text-slate-700 dark:text-slate-200 min-w-0 flex-1">
-            <n-spin v-if="actionLoading" :size="14" class="shrink-0" />
-            <span class="truncate" :title="progressTitle">{{ progressTitle }}</span>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span class="font-mono font-bold text-fnos-blue dark:text-blue-400">
-              {{ Math.round(progressPercent) }}%
-            </span>
-            <n-button v-if="actionLoading && progressAction === 'create' && progressPercent < 100" size="small" secondary type="error"
-              :loading="cancelLoading" @click="promptCancelCreate"
-              class="!h-7 !px-2 rounded-lg text-xs font-medium transition-all duration-150 hover:scale-[1.02] active:scale-95 [&_.n-button__icon]:!mr-1">
-              <template #icon>
-                <n-icon>
-                  <X />
-                </n-icon>
-              </template>
-              取消
-            </n-button>
-          </div>
+    <div v-if="task || wsUnavailable || listError" class="space-y-2">
+      <div v-if="task" class="flex items-start justify-between gap-3 rounded-xl bg-fnos-card p-3 text-sm">
+        <div role="status" class="min-w-0">
+          <p class="font-medium">{{ task.stage }}</p>
+          <p v-if="task.error" class="mt-1 break-words text-red-700 dark:text-red-400 select-text">{{ task.error }}</p>
         </div>
-        <n-progress type="line" :percentage="progressPercent" :show-indicator="false" :processing="actionLoading" status="info"
-          :height="6" border-radius="3px" />
+        <n-button v-if="task.active && task.action === 'create'" size="small" secondary type="error" class="shrink-0"
+          :disabled="!task.can_cancel || cancelLoading || wsUnavailable" @click="promptCancelCreate">
+          <template #icon><n-icon><X /></n-icon></template>
+          取消
+        </n-button>
       </div>
-    </n-collapse-transition>
+      <n-alert v-if="wsUnavailable" type="warning">实时连接暂不可用，正在自动重试。</n-alert>
+      <n-alert v-if="listError" type="error">{{ listError }}</n-alert>
+    </div>
 
     <!-- 快照列表 / 空状态 -->
     <div class="w-full flex-1">
-      <n-card v-if="!snapshots.length && !loading" :bordered="false" class="py-12 text-center shadow-sm rounded-2xl">
+      <p v-if="loading && !wsUnavailable" role="status" class="py-6 text-center text-sm">正在读取快照…</p>
+      <n-card v-else-if="!snapshots.length && !loading && !listError" :bordered="false" class="py-12 text-center shadow-sm rounded-2xl">
         <n-empty description="暂无快照备份">
           <template #icon>
             <n-icon :size="48" class="text-slate-300 dark:text-slate-600">
@@ -64,14 +51,14 @@
       <!-- 单列快照卡片流（一行一个，融合工作区卡片设计风格） -->
       <div v-else class="flex flex-col gap-2.5 sm:gap-3">
         <n-card v-for="item in snapshots" :key="item.id" hoverable :bordered="false"
-          class="interactive-card select-none shadow-sm group rounded-2xl transition-all duration-200 hover:shadow-md"
-          content-style="padding: 12px 14px sm:padding: 14px 18px;">
+          class="select-none shadow-sm group rounded-2xl"
+          content-style="padding: 12px 14px;">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
             <!-- 左侧核心信息 -->
             <div class="flex items-start sm:items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1">
               <!-- 时光机图标：工作区同款层次感底色与 hover 缩放高亮 -->
               <div
-                class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-white/[0.06] group-hover:bg-blue-50 dark:group-hover:bg-blue-950/40 text-slate-500 dark:text-slate-400 group-hover:text-fnos-blue dark:group-hover:text-blue-400 flex items-center justify-center transition-all duration-200 group-hover:scale-105 shrink-0 mt-0.5 sm:mt-0">
+                class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
                 <n-icon :size="20">
                   <History />
                 </n-icon>
@@ -135,9 +122,9 @@
                 该快照格式不受当前管理器支持
               </n-tooltip>
 
-              <n-button v-else secondary type="primary" size="small" :disabled="actionLoading"
+              <n-button v-else secondary type="primary" size="small" :disabled="actionsDisabled"
                 @click="promptRestore(item)"
-                class="!h-7 sm:!h-8 !px-2.5 sm:!px-3 rounded-lg text-xs font-medium transition-transform duration-150 active:scale-95">
+                class="!h-7 sm:!h-8 !px-2.5 sm:!px-3 rounded-lg text-xs font-medium">
                 <template #icon>
                   <n-icon>
                     <Rotate />
@@ -146,8 +133,8 @@
                 还原
               </n-button>
 
-              <n-button secondary type="error" size="small" :disabled="actionLoading" @click="promptDelete(item)"
-                class="!h-7 sm:!h-8 !px-2.5 sm:!px-3 rounded-lg text-xs font-medium transition-transform duration-150 active:scale-95">
+              <n-button secondary type="error" size="small" :disabled="actionsDisabled" @click="promptDelete(item)"
+                class="!h-7 sm:!h-8 !px-2.5 sm:!px-3 rounded-lg text-xs font-medium">
                 <template #icon>
                   <n-icon>
                     <Trash />
@@ -162,7 +149,7 @@
     </div>
     <!-- 创建快照弹窗 -->
     <n-modal v-model:show="showCreateModal" preset="dialog" title="创建 OpenChamber 快照" positive-text="创建快照" negative-text="取消"
-      :loading="actionLoading" @positive-click="handleCreateSnapshot">
+      :positive-button-props="{ disabled: actionsDisabled }" @positive-click="handleCreateSnapshot">
       <div class="space-y-3.5 pt-1 text-xs">
         <!-- 快照说明 -->
         <div
@@ -191,6 +178,7 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
+  NAlert,
   NButton,
   NCard,
   NEmpty,
@@ -199,9 +187,6 @@ import {
   NInput,
   NSelect,
   NModal,
-  NProgress,
-  NCollapseTransition,
-  NSpin,
   NTooltip,
   useMessage,
   useDialog
@@ -214,23 +199,24 @@ import {
   X
 } from '@vicons/tabler'
 import { useSnapshotStore } from '../stores/snapshot'
+import { useSystemStore } from '../stores/system'
 import type { SnapshotMeta } from '../types/api'
 
 const message = useMessage()
 const dialog = useDialog()
 const snapshotStore = useSnapshotStore()
+const { wsUnavailable, isActionLocked } = storeToRefs(useSystemStore())
 
 const {
   snapshots,
   totalSizeBytes,
   loading,
+  listError,
   actionLoading,
   cancelLoading,
-  progressVisible,
-  progressPercent,
-  progressTitle,
-  progressAction
+  task
 } = storeToRefs(snapshotStore)
+const actionsDisabled = computed(() => loading.value || Boolean(listError.value) || actionLoading.value || wsUnavailable.value || isActionLocked.value)
 
 // 创建弹窗状态
 const showCreateModal = ref(false)
@@ -269,6 +255,7 @@ function openCreateModal() {
 }
 
 function handleCreateSnapshot() {
+  if (actionsDisabled.value) return false
   const name = snapName.value.trim()
   if (!name) {
     message.warning('请输入快照名称')
@@ -326,7 +313,7 @@ function promptRestore(item: SnapshotMeta) {
     positiveText: '确认还原',
     negativeText: '取消',
     onPositiveClick: () => {
-      void handleRestore(item.id, item.name)
+      void handleRestore(item.id)
     }
   })
 }
@@ -343,9 +330,10 @@ function promptDelete(item: SnapshotMeta) {
   })
 }
 
-async function handleRestore(id: string, name?: string) {
+async function handleRestore(id: string) {
+  if (actionsDisabled.value) return
   try {
-    const res = await snapshotStore.restoreSnapshot(id, name)
+    const res = await snapshotStore.restoreSnapshot(id)
     if (res.success) {
       message.info(res.message || '快照还原任务已启动...')
     } else {
@@ -357,6 +345,7 @@ async function handleRestore(id: string, name?: string) {
 }
 
 async function handleDelete(id: string) {
+  if (actionsDisabled.value) return
   try {
     const res = await snapshotStore.deleteSnapshot(id)
     if (res.success) {

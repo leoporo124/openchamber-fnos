@@ -21,7 +21,7 @@
 
         <!-- 下载日志按钮 -->
         <n-button size="small" secondary @click="logStore.downloadLogs" title="下载日志"
-          class="!h-8 !px-2 sm:!px-2.5 rounded-lg text-xs font-medium transition-transform duration-150 active:scale-95">
+          class="!h-8 !px-2 sm:!px-2.5 rounded-lg text-xs font-medium">
           <div class="flex items-center justify-center gap-1">
             <n-icon :size="16">
               <Download />
@@ -32,7 +32,7 @@
 
         <!-- 清空日志按钮 -->
         <n-button size="small" secondary type="error" title="清空日志" @click="promptClearLogs"
-          class="!h-8 !px-2 sm:!px-2.5 rounded-lg text-xs font-medium transition-transform duration-150 active:scale-95">
+          class="!h-8 !px-2 sm:!px-2.5 rounded-lg text-xs font-medium">
           <div class="flex items-center justify-center gap-1">
             <n-icon :size="16">
               <Trash />
@@ -69,7 +69,7 @@
           <n-tooltip trigger="hover" placement="left" :disabled="isTouch">
             <template #trigger>
               <n-button size="small" secondary circle @click="manualScrollToBottom"
-                class="!w-8 !h-8 shadow-md backdrop-blur-sm transition-transform duration-150 active:scale-90">
+                class="!w-8 !h-8 shadow-md backdrop-blur-sm">
                 <template #icon>
                   <n-icon :size="16">
                     <ArrowDown />

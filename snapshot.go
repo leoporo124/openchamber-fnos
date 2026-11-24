@@ -32,19 +32,18 @@ var (
 	snapshotSubs         = make(map[chan struct{}]struct{})
 	snapshotProgressMu   sync.RWMutex
 	snapshotProgress     SnapshotProgress
-	snapshotProgressSubs = make(map[chan SnapshotProgress]struct{})
+	snapshotProgressSubs = make(map[chan struct{}]struct{})
 	snapshotCancel       context.CancelFunc
 	// 仅归档应用持久化数据；OpenCode 工作树不在清单中。
 	snapshotTargets = []string{"config.json", "openchamber-data", "config/opencode", "data/opencode/opencode.db", "data/opencode/opencode.db-wal", "data/opencode/opencode.db-shm", "data/opencode/auth.json"}
 )
 
 type SnapshotProgress struct {
-	Active  bool   `json:"active"`
-	Action  string `json:"action"`
-	Percent int    `json:"percent"`
-	Stage   string `json:"stage"`
-	Message string `json:"message"`
-	Error   string `json:"error,omitempty"`
+	Active    bool   `json:"active"`
+	CanCancel bool   `json:"can_cancel,omitempty"`
+	Action    string `json:"action"`
+	Stage     string `json:"stage"`
+	Error     string `json:"error,omitempty"`
 }
 
 type SnapshotMeta struct {
@@ -66,11 +65,10 @@ type CreateSnapshotParams struct {
 }
 
 type SnapshotSummary struct {
-	Items          []SnapshotMeta   `json:"items"`
-	TotalSizeBytes int64            `json:"total_size_bytes"`
-	DiskFreeBytes  uint64           `json:"disk_free_bytes"`
-	DiskTotalBytes uint64           `json:"disk_total_bytes"`
-	CurrentTask    SnapshotProgress `json:"current_task"`
+	Items          []SnapshotMeta `json:"items"`
+	TotalSizeBytes int64          `json:"total_size_bytes"`
+	DiskFreeBytes  uint64         `json:"disk_free_bytes"`
+	DiskTotalBytes uint64         `json:"disk_total_bytes"`
 }
 
 func GetCurrentSnapshotProgress() SnapshotProgress {
@@ -82,17 +80,24 @@ func GetCurrentSnapshotProgress() SnapshotProgress {
 func setSnapshotProgress(progress SnapshotProgress) {
 	snapshotProgressMu.Lock()
 	defer snapshotProgressMu.Unlock()
+	if progress.CanCancel && snapshotCancel == nil {
+		return
+	}
+	setSnapshotProgressLocked(progress)
+}
+
+func setSnapshotProgressLocked(progress SnapshotProgress) {
 	snapshotProgress = progress
 	for ch := range snapshotProgressSubs {
 		select {
-		case ch <- progress:
+		case ch <- struct{}{}:
 		default:
 		}
 	}
 }
 
-func SubscribeSnapshotProgress(buf int) (<-chan SnapshotProgress, func()) {
-	ch := make(chan SnapshotProgress, buf)
+func SubscribeSnapshotProgress() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
 	snapshotProgressMu.Lock()
 	snapshotProgressSubs[ch] = struct{}{}
 	snapshotProgressMu.Unlock()
@@ -121,10 +126,12 @@ func notifySnapshot() {
 func CancelSnapshotCreation() error {
 	snapshotProgressMu.Lock()
 	defer snapshotProgressMu.Unlock()
-	if snapshotCancel == nil {
-		return fmt.Errorf("当前没有正在执行的快照创建任务")
+	if snapshotCancel == nil || !snapshotProgress.CanCancel {
+		return fmt.Errorf("当前阶段无法取消快照创建")
 	}
 	snapshotCancel()
+	snapshotCancel = nil
+	setSnapshotProgressLocked(SnapshotProgress{Active: true, Action: "create", Stage: "正在取消快照创建"})
 	return nil
 }
 
@@ -150,7 +157,7 @@ func checkSnapshotDisk(required uint64) error {
 }
 
 func ListSnapshots() (SnapshotSummary, error) {
-	summary := SnapshotSummary{Items: []SnapshotMeta{}, CurrentTask: GetCurrentSnapshotProgress()}
+	summary := SnapshotSummary{Items: []SnapshotMeta{}}
 	if err := os.MkdirAll(globalSnapshotsDir, 0700); err != nil {
 		return summary, err
 	}
@@ -246,7 +253,7 @@ func collectSnapshotFiles(base string) ([]string, int64, error) {
 	return files, total, nil
 }
 
-func beginSnapshotTask(action string) (bool, error) {
+func beginSnapshotTask() (bool, error) {
 	if err := checkSnapshotResources(); err != nil {
 		return false, err
 	}
@@ -266,7 +273,6 @@ func beginSnapshotTask(action string) (bool, error) {
 	}
 	wasRunning := GetActiveServicePID() > 0
 	state.SetStatus(StatusSnapshotting, "正在执行快照维护")
-	setSnapshotProgress(SnapshotProgress{Active: true, Action: action, Stage: "正在准备快照维护"})
 	return wasRunning, nil
 }
 
@@ -304,14 +310,16 @@ func finishSnapshotTask(action string, err error) {
 		message := err.Error()
 		if action == "create" && errors.Is(err, context.Canceled) {
 			stage = "快照创建已取消"
-			message = stage
 			LogInfo("[快照] %s", stage)
+			setSnapshotProgress(SnapshotProgress{Action: action, Stage: stage})
+			notifySnapshot()
+			return
 		} else {
 			LogError("[快照] %s 失败: %s", action, err)
 		}
 		setSnapshotProgress(SnapshotProgress{Action: action, Stage: stage, Error: message})
 	} else {
-		setSnapshotProgress(SnapshotProgress{Action: action, Percent: 100, Stage: "快照任务完成"})
+		setSnapshotProgress(SnapshotProgress{Action: action, Stage: "快照任务完成"})
 	}
 	notifySnapshot()
 }
@@ -327,10 +335,10 @@ func queueSnapshotCreation(params CreateSnapshotParams) error {
 	if params.CompressionLevel < 1 || params.CompressionLevel > 9 {
 		params.CompressionLevel = gzip.BestSpeed
 	}
-	if err := checkSnapshotDisk(1024 * 1024 * 1024); err != nil {
+	if err := checkSnapshotDisk(100 * 1024 * 1024); err != nil {
 		return err
 	}
-	wasRunning, err := beginSnapshotTask("create")
+	wasRunning, err := beginSnapshotTask()
 	if err != nil {
 		return err
 	}
@@ -338,6 +346,7 @@ func queueSnapshotCreation(params CreateSnapshotParams) error {
 	snapshotProgressMu.Lock()
 	snapshotCancel = cancel
 	snapshotProgressMu.Unlock()
+	setSnapshotProgress(SnapshotProgress{Active: true, CanCancel: true, Action: "create", Stage: "正在停止服务并准备备份"})
 	go func() {
 		defer maintenanceMu.Unlock()
 		defer cancel()
@@ -348,11 +357,9 @@ func queueSnapshotCreation(params CreateSnapshotParams) error {
 		snapshotProgressMu.Unlock()
 		state.SetStatus(StatusStopped, "")
 		if wasRunning && appContext.Err() == nil {
-			if startErr := startService(); startErr != nil {
-				state.SetStatus(StatusStopped, "快照维护后启动失败: "+startErr.Error())
-				if err == nil {
-					err = startErr
-				}
+			setSnapshotProgress(SnapshotProgress{Active: true, Action: "create", Stage: "正在等待原服务恢复"})
+			if startErr := resumeSnapshotService(); startErr != nil {
+				err = snapshotResumeError(err, startErr, "快照已创建")
 			}
 		}
 		finishSnapshotTask("create", err)
@@ -394,7 +401,8 @@ func createSnapshot(ctx context.Context, params CreateSnapshotParams) (resultErr
 		return err
 	}
 	archive := filepath.Join(directory, "data.tar.gz")
-	if err := archiveSnapshot(ctx, archive, files, total, params.CompressionLevel); err != nil {
+	setSnapshotProgress(SnapshotProgress{Active: true, CanCancel: true, Action: "create", Stage: "正在打包持久化数据"})
+	if err := archiveSnapshot(ctx, archive, files, params.CompressionLevel); err != nil {
 		return err
 	}
 	info, err := os.Stat(archive)
@@ -402,13 +410,20 @@ func createSnapshot(ctx context.Context, params CreateSnapshotParams) (resultErr
 		return err
 	}
 	meta := SnapshotMeta{ID: id, Name: params.Name, CreatedAt: time.Now().Unix(), SizeBytes: info.Size(), AppVersion: globalAppVer, OpenChamberVersion: readVersion(), OpenCodeVersion: readOpenCodeVersion(), FormatVersion: snapshotFormatVersion, CompressionLevel: params.CompressionLevel}
+	setSnapshotProgress(SnapshotProgress{Active: true, CanCancel: true, Action: "create", Stage: "正在校验归档"})
 	meta.ArchiveSHA256, err = hashSnapshotArchive(ctx, archive)
 	if err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
-		return err
+	// Stop accepting cancellation before publishing the completed archive.
+	snapshotProgressMu.Lock()
+	ctxErr := ctx.Err()
+	snapshotCancel = nil
+	snapshotProgressMu.Unlock()
+	if ctxErr != nil {
+		return ctxErr
 	}
+	setSnapshotProgress(SnapshotProgress{Active: true, Action: "create", Stage: "正在保存快照"})
 	if err := writeJSONFile(filepath.Join(directory, "meta.json"), meta); err != nil {
 		return err
 	}
@@ -427,19 +442,16 @@ func createSnapshot(ctx context.Context, params CreateSnapshotParams) (resultErr
 type snapshotReader struct {
 	ctx    context.Context
 	reader io.Reader
-	onRead func(int)
 }
 
 func (r *snapshotReader) Read(buffer []byte) (int, error) {
 	if err := r.ctx.Err(); err != nil {
 		return 0, err
 	}
-	n, err := r.reader.Read(buffer)
-	r.onRead(n)
-	return n, err
+	return r.reader.Read(buffer)
 }
 
-func archiveSnapshot(ctx context.Context, archive string, files []string, total int64, level int) (resultErr error) {
+func archiveSnapshot(ctx context.Context, archive string, files []string, level int) (resultErr error) {
 	file, err := os.OpenFile(archive, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -456,28 +468,11 @@ func archiveSnapshot(ctx context.Context, archive string, files []string, total 
 	defer compressed.Close()
 	writer := tar.NewWriter(compressed)
 	defer writer.Close()
-	var processed int64
-	var lastReport time.Time
-	onRead := func(n int) {
-		processed += int64(n)
-		if time.Since(lastReport) < 150*time.Millisecond {
-			return
-		}
-		lastReport = time.Now()
-		percent := 5
-		if total > 0 {
-			percent += int(processed * 85 / total)
-		}
-		if percent > 90 {
-			percent = 90
-		}
-		setSnapshotProgress(SnapshotProgress{Active: true, Action: "create", Percent: percent, Stage: "正在打包持久化数据", Message: formatBytes(uint64(processed)) + " / " + formatBytes(uint64(total))})
-	}
 	for _, name := range files {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := appendSnapshotFile(writer, name, &snapshotReader{ctx: ctx, onRead: onRead}); err != nil {
+		if err := appendSnapshotFile(writer, name, &snapshotReader{ctx: ctx}); err != nil {
 			return err
 		}
 	}
@@ -553,32 +548,58 @@ func queueSnapshotRestore(id string) (*SnapshotMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	wasRunning, err := beginSnapshotTask("restore")
+	wasRunning, err := beginSnapshotTask()
 	if err != nil {
 		return nil, err
 	}
+	setSnapshotProgress(SnapshotProgress{Active: true, Action: "restore", Stage: "正在校验快照"})
 	go func() {
 		defer maintenanceMu.Unlock()
 		err := restoreSnapshot(*meta, wasRunning)
 		if cleanupErr := cleanupSnapshotArtifacts(); cleanupErr != nil {
 			LogWarning("[快照] 临时文件尚未清理，本轮不再重试；恢复记录未处理完成时仍限制启动和维护: %s", cleanupErr)
 		}
-		if GetActiveServicePID() > 0 {
-			state.SetStatus(StatusRunning, "")
-		} else {
-			state.SetStatus(StatusStopped, "")
+		stillRunning := GetActiveServicePID() > 0
+		if state.Status() == StatusSnapshotting {
+			if stillRunning {
+				state.SetStatus(StatusRunning, "")
+			} else {
+				state.SetStatus(StatusStopped, "")
+			}
 		}
-		if wasRunning && appContext.Err() == nil && GetActiveServicePID() == 0 && isRuntimeReady() {
-			if startErr := startService(); startErr != nil {
-				state.SetStatus(StatusStopped, "快照还原后启动失败: "+startErr.Error())
-				if err == nil {
-					err = startErr
-				}
+		if err != nil && wasRunning && appContext.Err() == nil && !stillRunning && checkMaintenanceRecovery() == nil {
+			setSnapshotProgress(SnapshotProgress{Active: true, Action: "restore", Stage: "正在等待原服务恢复"})
+			if startErr := resumeSnapshotService(); startErr != nil {
+				err = snapshotResumeError(err, startErr, "")
 			}
 		}
 		finishSnapshotTask("restore", err)
 	}()
 	return meta, nil
+}
+
+func resumeSnapshotService() error {
+	err := startService()
+	if err == nil {
+		err = waitServiceReady()
+		if err != nil {
+			stopAndWait()
+		}
+	}
+	if err != nil {
+		state.SetStatus(StatusStopped, "快照维护后服务恢复失败: "+err.Error())
+	}
+	return err
+}
+
+func snapshotResumeError(taskErr, startErr error, completed string) error {
+	if taskErr != nil {
+		if errors.Is(taskErr, context.Canceled) {
+			return fmt.Errorf("快照创建已取消，但原服务恢复失败: %w", startErr)
+		}
+		return fmt.Errorf("%v；原服务恢复失败: %w", taskErr, startErr)
+	}
+	return fmt.Errorf("%s，但原服务恢复失败: %w", completed, startErr)
 }
 
 // extractSnapshot 先完整校验并解压到隔离目录。
@@ -588,7 +609,7 @@ func extractSnapshot(archive, stage string) error {
 		return err
 	}
 	defer file.Close()
-	compressed, err := gzip.NewReader(&snapshotReader{ctx: appContext, reader: file, onRead: func(int) {}})
+	compressed, err := gzip.NewReader(&snapshotReader{ctx: appContext, reader: file})
 	if err != nil {
 		return err
 	}
@@ -625,7 +646,8 @@ func extractSnapshot(archive, stage string) error {
 	if !seen["config.json"] {
 		return fmt.Errorf("快照缺少应用配置")
 	}
-	return checkSnapshotDisk(total + 100*1024*1024)
+	// Space was checked before writing each file. Runtime backups are moved, not copied.
+	return nil
 }
 
 func extractSnapshotFile(reader io.Reader, target string) error {
@@ -660,6 +682,7 @@ func restoreSnapshot(meta SnapshotMeta, wasRunning bool) error {
 	if err != nil {
 		return err
 	}
+	setSnapshotProgress(SnapshotProgress{Active: true, Action: "restore", Stage: "正在解包并校验快照数据"})
 	if err := extractSnapshot(archive, stage); err != nil {
 		return err
 	}
@@ -710,7 +733,7 @@ func restoreSnapshot(meta SnapshotMeta, wasRunning bool) error {
 	if err := appContext.Err(); err != nil {
 		return err
 	}
-	setSnapshotProgress(SnapshotProgress{Active: true, Action: "restore", Percent: 45, Stage: "正在停止服务并隔离现有数据"})
+	setSnapshotProgress(SnapshotProgress{Active: true, Action: "restore", Stage: "正在停止服务并隔离现有数据"})
 	stopAndWait()
 	backup, err := os.MkdirTemp(globalPkgVar, "snapshot-backup-")
 	if err != nil {
@@ -817,7 +840,7 @@ func hashSnapshotArchive(ctx context.Context, archive string) (string, error) {
 	}
 	defer file.Close()
 	digest := sha256.New()
-	reader := &snapshotReader{ctx: ctx, reader: file, onRead: func(int) {}}
+	reader := &snapshotReader{ctx: ctx, reader: file}
 	if _, err := io.Copy(digest, reader); err != nil {
 		return "", err
 	}

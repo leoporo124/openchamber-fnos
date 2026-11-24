@@ -363,11 +363,13 @@ func activateDeployment(journal *deploymentJournal) error {
 	if err := startPreparedService(); err != nil {
 		return err
 	}
-	return waitDeploymentReady()
+	return waitServiceReady()
 }
 
-func waitDeploymentReady() error {
-	deadline := time.NewTimer(300 * time.Second)
+// waitServiceReady is called under maintenanceMu. The caller stops a failed launch
+// before releasing the lock or rolling back data/runtime.
+func waitServiceReady() error {
+	deadline := time.NewTimer(serviceStartupTimeout)
 	ticker := time.NewTicker(time.Second)
 	defer deadline.Stop()
 	defer ticker.Stop()
@@ -376,13 +378,13 @@ func waitDeploymentReady() error {
 		case <-appContext.Done():
 			return appContext.Err()
 		case <-deadline.C:
-			return fmt.Errorf("新运行包就绪探测超时")
+			return fmt.Errorf("服务就绪探测超时，请查看运行日志")
 		case <-ticker.C:
 			if state.Status() == StatusRunning {
 				return nil
 			}
 			if state.Status() == StatusStopped {
-				return fmt.Errorf("新运行包启动失败")
+				return fmt.Errorf("服务未能成功启动，请查看运行日志")
 			}
 		}
 	}
@@ -402,7 +404,7 @@ func stopDeploymentAndRestore(journal deploymentJournal, cause error) {
 			state.SetStatus(StatusStopped, "原运行包已恢复，启动失败: "+err.Error())
 			return
 		}
-		if err := waitDeploymentReady(); err != nil {
+		if err := waitServiceReady(); err != nil {
 			stopAndWait()
 			state.SetStatus(StatusStopped, "原运行包已恢复，就绪检查失败: "+err.Error())
 			return

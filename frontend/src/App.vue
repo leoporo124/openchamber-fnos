@@ -16,7 +16,7 @@
                       <div @click="openRepo"
                         class="flex items-center gap-3 px-3 py-3 rounded-2xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100/80 dark:border-white/[0.06] transition-all duration-200 hover:border-slate-200 dark:hover:border-white/[0.12] hover:bg-slate-100/50 dark:hover:bg-white/[0.07] cursor-pointer group select-none">
                         <img :src="iconUrl" alt="OpenChamber"
-                          class="w-8 h-8 rounded-xl object-contain shrink-0 transition-transform duration-200 group-hover:scale-105" />
+                          class="w-8 h-8 rounded-xl object-contain shrink-0" />
                         <div class="min-w-0 flex-1">
                           <div class="flex items-center justify-between gap-1.5">
                             <div
@@ -24,7 +24,7 @@
                              OpenChamber
                              </div>
                             <span v-if="appHasUpdate"
-                              class="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-800/60 text-fnos-blue dark:text-blue-400 font-semibold leading-none shrink-0 shadow-xs transition-transform group-hover:scale-105">
+                              class="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-800/60 text-fnos-blue dark:text-blue-400 font-semibold leading-none shrink-0 shadow-xs">
                               Update
                             </span>
                           </div>
@@ -57,11 +57,9 @@
                   class="flex-1 min-h-0 min-w-0">
                   <!-- 全局统一宽度约束容器 -->
                   <div class="w-full max-w-6xl flex-1 flex flex-col min-h-0">
-                    <Transition name="view-fade-slide" mode="out-in">
-                      <KeepAlive>
-                        <component :is="currentView" :key="tab" />
-                      </KeepAlive>
-                    </Transition>
+                    <KeepAlive>
+                      <component :is="currentView" :key="tab" />
+                    </KeepAlive>
                   </div>
                   <n-back-top :bottom="70" :right="20" class="sm:!bottom-8 sm:!right-8" />
                 </n-layout-content>
@@ -71,10 +69,9 @@
                   class="sm:hidden z-50 !bg-fnos-card/95 !backdrop-blur-md px-1 pt-1 shadow-lg mobile-tabbar-footer">
                   <n-flex justify="space-around" align="center" :wrap="false" class="w-full">
                     <n-button v-for="t in mobileTabs" :key="t.key" text :type="tab === t.key ? 'primary' : 'default'"
-                      @click="tab = t.key" class="flex-1 !py-1 !px-0 transition-transform duration-150 active:scale-90">
+                      @click="tab = t.key" class="flex-1 !py-1 !px-0">
                       <div class="flex flex-col items-center gap-0.5 select-none">
-                        <n-icon :size="20" class="transition-transform duration-200"
-                          :class="tab === t.key ? 'scale-110' : 'scale-100'">
+                        <n-icon :size="20">
                           <component :is="t.icon" />
                         </n-icon>
                         <span class="text-[10.5px] leading-tight transition-colors duration-150 whitespace-nowrap"

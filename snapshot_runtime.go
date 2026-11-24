@@ -13,7 +13,7 @@ func prepareSnapshotRuntime(meta SnapshotMeta, stage string) (bool, error) {
 	if isRuntimeReady() && readVersion() == meta.OpenChamberVersion && readOpenCodeVersion() == meta.OpenCodeVersion {
 		return false, nil
 	}
-	setSnapshotProgress(SnapshotProgress{Active: true, Action: "restore", Percent: 25, Stage: "正在联网准备快照对应的精确运行版本"})
+	setSnapshotProgress(SnapshotProgress{Active: true, Action: "restore", Stage: "正在联网准备快照对应的精确运行版本"})
 	cfg := GetConfig()
 	release, err := resolveRuntimeRelease(cfg, meta.OpenChamberVersion)
 	if err != nil {
@@ -84,6 +84,7 @@ func applySnapshotRestore(stage string, journal snapshotRecovery, cfg Config) (r
 	if err := saveSnapshotRecovery(journal); err != nil {
 		return err
 	}
+	setSnapshotProgress(SnapshotProgress{Active: true, Action: "restore", Stage: "正在还原数据与运行环境"})
 	defer func() {
 		if resultErr == nil || journal.Committed {
 			return
@@ -113,10 +114,11 @@ func applySnapshotRestore(stage string, journal snapshotRecovery, cfg Config) (r
 	ApplyNpmRegistryEnv()
 	state.SetStatus(StatusStopped, "")
 	if cfg.LastRunState == StatusRunning {
+		setSnapshotProgress(SnapshotProgress{Active: true, Action: "restore", Stage: "正在等待还原后的服务就绪"})
 		if err := startPreparedService(); err != nil {
 			return err
 		}
-		if err := waitDeploymentReady(); err != nil {
+		if err := waitServiceReady(); err != nil {
 			return err
 		}
 	}

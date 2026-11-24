@@ -34,24 +34,31 @@
     <div class="badge {{.BadgeClass}}">{{.BadgeText}}</div>
     <h1>{{.Title}}</h1>
     <p class="desc">{{.Desc}}</p>
-    {{if .IsStarting}}<div class="auto-retry">正在探测服务状态，将在 <b id="countdown">3</b> 秒后重试</div>{{end}}
+    {{if .IsStarting}}<div class="auto-retry">服务就绪后将自动重试</div>{{end}}
     <button class="btn" onclick="location.reload()">立即刷新</button>
     {{if .DetailsHTML}}{{.DetailsHTML}}{{end}}
   </div>
   <script>
     const card = document.getElementById('statusCard');
     if (card.dataset.starting === 'true') {
-      let countdown = 3;
-      const label = document.getElementById('countdown');
-      setInterval(async () => {
-        if (--countdown > 0) { label.textContent = countdown; return; }
-        countdown = 3;
-        label.textContent = countdown;
+      async function check() {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
         try {
-          const response = await fetch(location.href, { method: 'HEAD', cache: 'no-store' });
-          if (response.status < 500) location.reload();
-        } catch {}
-      }, 1000);
+          const response = await fetch(location.href, {
+            method: 'HEAD', cache: 'no-store', signal: controller.signal,
+            headers: { Accept: 'text/html' }
+          });
+          if (!response.headers.has('X-OpenChamber-Wait')) {
+            location.reload();
+            return;
+          }
+        } catch {} finally {
+          clearTimeout(timeout);
+        }
+        setTimeout(check, 3000);
+      }
+      setTimeout(check, 3000);
     }
   </script>
 </body>

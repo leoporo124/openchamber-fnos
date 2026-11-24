@@ -1,5 +1,5 @@
 <template>
-  <div v-auto-animate class="w-full flex-1 flex flex-col gap-4 sm:gap-6">
+  <div class="w-full flex-1 flex flex-col gap-4 sm:gap-6">
     <!-- 页头标题 -->
     <div
       class="sticky -top-[14px] sm:-top-6 z-20 -mt-3.5 sm:-mt-4 pt-5 sm:pt-7 pb-2 sm:pb-2.5 bg-fnos-bg/90 backdrop-blur-md flex items-center justify-between gap-3 w-full min-w-0 transition-all duration-200">
@@ -43,7 +43,7 @@
             </div>
 
             <n-button type="primary" size="medium" :disabled="!isRunning" @click="systemStore.openWorkApp"
-              class="w-full sm:w-auto !h-9 sm:!h-12 px-4 sm:px-7 shadow-sm shadow-fnos-blue/20 font-medium rounded-lg sm:rounded-xl text-sm sm:text-base transition-transform duration-150 active:scale-95">
+              class="w-full sm:w-auto !h-9 sm:!h-12 px-4 sm:px-7 shadow-sm shadow-fnos-blue/20 font-medium rounded-lg sm:rounded-xl text-sm sm:text-base">
               <template #icon>
                 <n-icon class="text-[17px] sm:text-[20px]">
                   <ExternalLink />
@@ -122,22 +122,21 @@
       <!-- 运行控制区 -->
       <div class="space-y-4">
         <h2 class="text-lg font-bold text-slate-800 dark:text-slate-100 tracking-tight">运行控制</h2>
-        <n-grid v-auto-animate :cols="4" :x-gap="10" :y-gap="10" responsive="screen" item-responsive class="sm:!gap-4">
-          <n-gi span="2 m:1" v-for="a in actionCards" :key="a.action">
+        <n-grid :cols="4" :x-gap="10" :y-gap="10" responsive="screen" item-responsive class="sm:!gap-4">
+          <n-gi span="2 m:1" v-for="a in actionCards" :key="a.action === 'stop' ? 'start' : a.action">
             <n-tooltip trigger="hover" :disabled="isTouch || a.disabled || a.loading">
               <template #trigger>
                 <div class="h-full">
                   <!-- 运行控制操作卡片 -->
-                  <n-card hoverable :bordered="false"
-                    class="cursor-pointer text-center interactive-card select-none !p-1.5 sm:!p-4 shadow-sm group rounded-xl sm:rounded-2xl !h-full"
-                    :class="{ 'opacity-50 !cursor-not-allowed !transform-none': a.disabled && !a.loading }"
-                    @click="!a.disabled && !a.loading && handleAction(a.action)">
+                  <n-card tag="button" type="button" hoverable :bordered="false"
+                    class="w-full cursor-pointer text-center interactive-card select-none !p-1.5 sm:!p-4 shadow-sm group rounded-xl sm:rounded-2xl !h-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-fnos-blue"
+                    :class="{ 'opacity-50 !cursor-not-allowed': a.disabled && !a.loading }"
+                    :disabled="a.disabled || a.loading" :aria-busy="a.loading" @click="handleAction(a.action)">
                     <div class="flex flex-col items-center justify-center gap-1.5 sm:gap-2.5 py-1.5 sm:py-3">
                       <div
-                        class="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all duration-200 group-hover:scale-110 group-active:scale-95"
+                        class="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center"
                         :class="a.iconBg">
-                        <n-spin v-if="a.loading" :size="18" class="sm:hidden" />
-                        <n-spin v-if="a.loading" :size="24" class="hidden sm:inline-block" />
+                        <n-spin v-if="a.loading" class="text-[18px] sm:text-[24px]" size="small" />
                         <n-icon v-else class="text-[18px] sm:text-[24px]" :class="a.iconColor">
                           <component :is="a.icon" />
                         </n-icon>
@@ -158,7 +157,7 @@
     </template>
 
     <!-- 底部状态通知区 -->
-    <div v-auto-animate class="space-y-3">
+    <div class="space-y-3">
       <!-- 实时更新与部署进度 / 启动中 / 快照中 / 错误信息 -->
       <n-alert v-if="statusData.last_message" :type="isBuilding || isStarting || isSnapshotting ? 'info' : 'warning'"
         :show-icon="true" class="rounded-2xl shadow-sm">
@@ -173,8 +172,8 @@
 
     <!-- 在线部署版本选择弹窗 -->
     <n-modal v-model:show="showDeployModal" preset="dialog" type="info" title="在线部署 OpenChamber" positive-text="开始部署"
-      negative-text="取消" :loading="isDeployConfirming"
-      :positive-button-props="{ disabled: !selectedDeployVersion }" @positive-click="confirmDeploy"
+      negative-text="取消"
+      :positive-button-props="{ disabled: !selectedDeployVersion || isDeployConfirming }" @positive-click="confirmDeploy"
       @negative-click="showDeployModal = false">
       <div class="space-y-3 pt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
         <div class="space-y-3">
@@ -197,7 +196,7 @@
 
     <!-- 发现新版本升级确认弹窗 -->
     <n-modal v-model:show="showUpdateModal" preset="dialog" type="info" title="发现新版本" positive-text="立即更新"
-      negative-text="暂不更新" :loading="isActionLocked" @positive-click="confirmUpgrade"
+      negative-text="暂不更新" :positive-button-props="{ disabled: isActionLocked }" @positive-click="confirmUpgrade"
       @negative-click="showUpdateModal = false">
       <div class="space-y-3 pt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
         <!-- 版本信息对比（上下行信息样式） -->

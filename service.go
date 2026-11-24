@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	StatusStopped      = "stopped"
-	StatusStarting     = "starting"
-	StatusRunning      = "running"
-	StatusBuilding     = "building"
-	StatusSnapshotting = "snapshotting"
+	StatusStopped         = "stopped"
+	StatusStarting        = "starting"
+	StatusRunning         = "running"
+	StatusBuilding        = "building"
+	StatusSnapshotting    = "snapshotting"
+	serviceStartupTimeout = 5 * time.Minute
 )
 
 type ServiceState struct {
@@ -213,13 +214,13 @@ func waitServiceExit(mp *managedProcess, output *LineLogWriter) {
 }
 
 func stopAndWait() {
-	stopReverseProxy()
 	procMu.Lock()
 	mp := process
 	if mp != nil {
 		mp.stopRequested = true
 	}
 	procMu.Unlock()
+	stopReverseProxy()
 	if mp == nil {
 		cleanupServiceProcesses()
 		if state.Status() != StatusBuilding && state.Status() != StatusSnapshotting {
@@ -281,11 +282,13 @@ func formatDuration(d time.Duration) string {
 func waitAndActivateReverseProxy(mp *managedProcess, port int) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	timeout := time.NewTimer(300 * time.Second)
+	timeout := time.NewTimer(serviceStartupTimeout)
 	defer timeout.Stop()
 	for {
 		select {
 		case <-mp.done:
+			return
+		case <-appContext.Done():
 			return
 		case <-timeout.C:
 			if deploymentActive.Load() {

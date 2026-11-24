@@ -33,6 +33,8 @@ jobs:
           go-version-file: go.mod
       - name: 构建安装包
         run: bash build.sh
+      - name: 运行前端测试
+        run: npm test --prefix frontend
       - name: 运行 Go 测试
         run: go test ./...
       - name: 读取版本并生成校验文件

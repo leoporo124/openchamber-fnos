@@ -45,6 +45,10 @@ export const useAppStore = defineStore('app', () => {
       snapshotStore.updateSummary(data)
     })
 
+    wsClient.on('snapshot_error', (message) => {
+      snapshotStore.setListError(message)
+    })
+
     wsClient.on('snapshot_progress', (data) => {
       snapshotStore.updateProgress(data)
     })

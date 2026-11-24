@@ -403,7 +403,7 @@ func startReverseProxyLocked() error {
 			}
 
 			contentType := strings.ToLower(resp.Header.Get("Content-Type"))
-			if strings.Contains(contentType, "text/html") && resp.Body != nil {
+			if shouldRewriteWebUIHTML(resp) {
 				return rewriteWebUIHTML(resp, "")
 			}
 

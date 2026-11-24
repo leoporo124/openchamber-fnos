@@ -6,9 +6,9 @@
       <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">应用设置</h1>
 
       <!-- 右侧同行操作按钮组 -->
-      <div v-auto-animate class="flex items-center gap-2 shrink-0">
-        <n-button v-if="isChanged" size="small" :disabled="saving || configLoading" @click="handleReset"
-          class="!h-8 !px-3 rounded-lg text-xs font-medium transition-transform duration-150 active:scale-95">
+      <div class="flex items-center gap-2 shrink-0">
+        <n-button size="small" :disabled="!isChanged || saving || configLoading" @click="handleReset"
+          class="!h-8 !px-3 rounded-lg text-xs font-medium">
           <template #icon>
             <n-icon :size="15">
               <X />
@@ -17,22 +17,22 @@
           取消
         </n-button>
 
-        <n-button type="primary" size="small" :loading="saving" :disabled="!isChanged || loadError || !configLoaded || remoteChanged || configLoading"
+        <n-button type="primary" size="small" :disabled="saving || !isChanged || loadError || !configLoaded || remoteChanged || configLoading"
+          :aria-busy="saving"
           @click="handleSave"
-          class="!h-8 !px-3 rounded-lg text-xs font-medium shadow-xs shadow-fnos-blue/20 transition-all duration-150 active:scale-95 shrink-0">
-          保存设置
+          class="!h-8 !w-24 rounded-lg text-xs font-medium shadow-xs shadow-fnos-blue/20 shrink-0">
+          {{ saving ? '保存中…' : '保存设置' }}
         </n-button>
       </div>
     </div>
 
     <!-- 加载状态与表单内容过渡容器 -->
-    <div v-auto-animate class="w-full flex-1">
+    <div class="w-full flex-1">
       <!-- 加载失败轻量状态 -->
       <n-card v-if="loadError && !configLoaded" :bordered="false" class="shadow-sm py-12 text-center rounded-2xl">
         <n-empty description="配置加载失败">
           <template #extra>
-            <n-button size="small" secondary @click="configStore.fetchConfig(true)"
-              class="transition-transform duration-150 active:scale-95">
+            <n-button size="small" secondary @click="configStore.fetchConfig(true)">
               重新加载
             </n-button>
           </template>
@@ -294,9 +294,9 @@
                 <div class="text-sm font-medium text-slate-800 dark:text-slate-100">
                   保留数据并干净部署当前版本
                 </div>
-                <n-button type="error" size="small" secondary :loading="isBuilding"
+                <n-button type="error" size="small" secondary
                   :disabled="isActionLocked" @click="handleRepairCurrent"
-                  class="shrink-0 !h-8 !px-3.5 rounded-xl font-medium transition-transform duration-150 active:scale-95">
+                  class="shrink-0 !h-8 !px-3.5 rounded-xl font-medium">
                   重置
                 </n-button>
               </div>
@@ -347,7 +347,7 @@ import { useIsTouchDevice } from '../utils/device'
 
 const configStore = useConfigStore()
 const systemStore = useSystemStore()
-const { isBuilding, isActionLocked, isRunning } = storeToRefs(systemStore)
+const { isActionLocked, isRunning } = storeToRefs(systemStore)
 const message = useMessage()
 const dialog = useDialog()
 const isTouch = useIsTouchDevice()

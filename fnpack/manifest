@@ -1,5 +1,5 @@
 appname               = openchamber
-version               = 0.1.11
+version               = 0.1.12
 display_name          = OpenChamber
 desc                  = OpenChamber 的飞牛 fnOS 原生部署与管理应用，提供 Admin 和 WebUI 双入口，支持在线更新、工作区、快照与日志。首次使用需联网部署。
 platform              = x86

@@ -22,7 +22,7 @@
     </div>
 
     <!-- 数据展示与空状态过渡容器 -->
-    <div v-auto-animate class="w-full flex-1">
+    <div class="w-full flex-1">
       <!-- 空状态 -->
       <n-card v-if="!items.length" :bordered="false" class="py-12 text-center shadow-sm rounded-2xl">
         <n-empty description="暂无工作区数据">
@@ -38,7 +38,7 @@
       </n-card>
 
       <!-- 工作区卡片网格 -->
-      <n-grid v-else v-auto-animate :cols="2" :x-gap="16" :y-gap="16" responsive="screen" item-responsive>
+      <n-grid v-else :cols="2" :x-gap="16" :y-gap="16" responsive="screen" item-responsive>
         <n-gi span="2 m:1" v-for="item in items" :key="item.workspaceId">
           <n-card hoverable :bordered="false" @click="handleOpenWorkspace(item.path)"
             class="cursor-pointer interactive-card select-none shadow-sm group !h-full rounded-2xl">
@@ -48,7 +48,7 @@
                 <n-tooltip trigger="hover" :disabled="isTouch">
                   <template #trigger>
                     <div
-                      class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-white/[0.06] group-hover:bg-blue-50 dark:group-hover:bg-blue-950/40 text-slate-500 dark:text-slate-400 group-hover:text-fnos-blue dark:group-hover:text-blue-400 flex items-center justify-center transition-all duration-200 group-hover:scale-105">
+                      class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-white/[0.06] group-hover:bg-blue-50 dark:group-hover:bg-blue-950/40 text-slate-500 dark:text-slate-400 group-hover:text-fnos-blue dark:group-hover:text-blue-400 flex items-center justify-center transition-colors duration-200">
                       <n-icon :size="22">
                         <Folder />
                       </n-icon>

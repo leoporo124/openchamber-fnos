@@ -11,6 +11,7 @@ export type WSEventMap = {
   status: StatusData
   workspace: WorkspaceData
   snapshot: SnapshotSummary
+  snapshot_error: string
   usage: { cpu: string; memory: string }
   log: string
   log_snapshot: LogData

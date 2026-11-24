@@ -106,11 +106,10 @@ export interface SnapshotMeta {
 }
 
 export interface SnapshotProgressTask {
-  active?: boolean
+  active: boolean
+  can_cancel?: boolean
   action: string
-  percent: number
-  stage?: string
-  message?: string
+  stage: string
   error?: string
 }
 
@@ -119,7 +118,6 @@ export interface SnapshotSummary {
   total_size_bytes: number
   disk_free_bytes: number
   disk_total_bytes: number
-  current_task?: SnapshotProgressTask
 }
 
 export interface CreateSnapshotParams {

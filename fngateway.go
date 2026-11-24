@@ -115,8 +115,11 @@ func handleFnGateway(c *gin.Context) {
 			}
 
 			// 改写页面标签并注入核心补丁脚本
-			if strings.Contains(contentType, "text/html") && resp.Body != nil {
+			if shouldRewriteWebUIHTML(resp) {
 				return rewriteWebUIHTML(resp, fnGatewayPrefix)
+			}
+			if resp.Request.Method == http.MethodHead {
+				return nil
 			}
 			if strings.Contains(contentType, "manifest+json") && resp.Body != nil {
 				body, err := io.ReadAll(resp.Body)
@@ -140,7 +143,7 @@ func handleFnGateway(c *gin.Context) {
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			// 返回结构化 JSON
-			if !strings.Contains(r.Header.Get("Accept"), "text/html") {
+			if !isWebUINavigation(r) {
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				w.WriteHeader(http.StatusBadGateway)
 				_ = json.NewEncoder(w).Encode(map[string]string{
@@ -153,12 +156,26 @@ func handleFnGateway(c *gin.Context) {
 			}
 
 			// HTML 页面请求渲染符合系统风格的状态指示页
-			serveFnGatewayStatusPage(w, r, err)
+			writeFnGatewayStatusPage(w, r, state.Status(), err)
 		},
 	}
 
-	proxyWithAuth(proxy, fnGatewayPrefix).ServeHTTP(c.Writer, c.Request)
+	webUI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if state.Status() == StatusStarting && isWebUINavigation(r) {
+			writeFnGatewayStatusPage(w, r, StatusStarting, nil)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	})
+	proxyWithAuth(webUI, fnGatewayPrefix).ServeHTTP(c.Writer, c.Request)
 	c.Abort()
+}
+
+func isWebUINavigation(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	return r.Header.Get("Sec-Fetch-Mode") == "navigate" || strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 func isGatewayAsset(path, contentType string) bool {
@@ -287,13 +304,10 @@ func injectHtmlHead(body, script []byte) []byte {
 	return res.Bytes()
 }
 
-// serveFnGatewayStatusPage 渲染符合系统设计规范的网关状态/错误页面
-func serveFnGatewayStatusPage(w http.ResponseWriter, r *http.Request, err error) {
+func writeFnGatewayStatusPage(w http.ResponseWriter, r *http.Request, currentStatus string, err error) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusBadGateway)
 
-	currentStatus := state.Status()
 	title := "无法连接到后端服务"
 	desc := "后端服务暂未响应"
 	badgeClass := "badge-err"
@@ -328,6 +342,15 @@ func serveFnGatewayStatusPage(w http.ResponseWriter, r *http.Request, err error)
 		desc = "OpenChamber 服务当前处于停止状态"
 		badgeClass = "badge-stopped"
 		badgeText = "已停止"
+	}
+	if isStarting {
+		w.Header().Set("X-OpenChamber-Wait", "1")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	} else {
+		w.WriteHeader(http.StatusBadGateway)
+	}
+	if r != nil && r.Method == http.MethodHead {
+		return
 	}
 
 	var detailsHTML template.HTML
